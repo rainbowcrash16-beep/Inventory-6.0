@@ -1,0 +1,2330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0A0A0F">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MyStuff">
+<title>MyStuff — Home Tracker</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" onerror="window.__qrLoadFailed=true"></script>
+<style>
+:root{
+  --green:#00D4AA;--red:#FF4D6D;--amber:#FFB020;--blue:#4D9FFF;
+  --purple:#A78BFA;--dark:#0A0A0F;--card:#12121A;--panel:#1A1A28;
+  --border:#1E1E2E;--text:#E8E8F0;--muted:#6B6B8A;
+  --font-head:'Syne',sans-serif;--font-mono:'DM Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--dark);color:var(--text);font-family:var(--font-mono)}
+#app{display:flex;flex-direction:column;height:100dvh}
+.screen{display:none;flex:1;flex-direction:column;overflow:hidden}
+.screen.active{display:flex}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-bottom:90px}
+
+nav{display:flex;background:#12121A;border-top:1px solid var(--border);position:fixed;bottom:0;left:0;right:0;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:none;color:var(--muted);padding:8px 2px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;transition:color .2s;font-family:var(--font-mono);font-size:8px;letter-spacing:.5px}
+nav button.active{color:var(--green)}
+nav button svg{width:20px;height:20px}
+
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 10px;padding-top:calc(14px + env(safe-area-inset-top))}
+.hdr h1{font-family:var(--font-head);font-size:22px;letter-spacing:3px}
+
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:1px}
+.badge-red   {background:color-mix(in srgb,var(--red)   15%,transparent);border:1px solid var(--red);   color:var(--red)}
+.badge-green {background:color-mix(in srgb,var(--green) 15%,transparent);border:1px solid var(--green); color:var(--green)}
+.badge-amber {background:color-mix(in srgb,var(--amber) 15%,transparent);border:1px solid var(--amber); color:var(--amber)}
+.badge-purple{background:color-mix(in srgb,var(--purple)15%,transparent);border:1px solid var(--purple);color:var(--purple)}
+.badge-blue  {background:color-mix(in srgb,var(--blue)  15%,transparent);border:1px solid var(--blue);  color:var(--blue)}
+
+.search-row{display:flex;align-items:center;gap:8px;background:var(--panel);margin:0 16px 10px;border-radius:12px;padding:10px 14px}
+.search-row input{flex:1;background:none;border:none;color:var(--text);font-size:14px;font-family:var(--font-mono);outline:none}
+.search-row input::placeholder{color:var(--muted)}
+
+.pills{display:flex;gap:8px;padding:0 16px 10px;overflow-x:auto;scrollbar-width:none}
+.pills::-webkit-scrollbar{display:none}
+.pill{border:1px solid var(--muted);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;background:none;cursor:pointer;font-family:var(--font-mono);letter-spacing:.5px;transition:all .15s}
+.pill.active    {background:var(--green);border-color:var(--green);color:var(--dark)}
+.pill.active-red{background:var(--red);  border-color:var(--red);  color:#fff}
+
+.item-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:0;margin-bottom:10px;cursor:pointer;transition:border-color .15s;animation:fadeUp .2s ease both;overflow:hidden}
+.item-card.missing{border-color:color-mix(in srgb,var(--red)    40%,transparent)}
+.item-card.broken {border-color:color-mix(in srgb,var(--purple) 40%,transparent)}
+.item-card:active{opacity:.8}
+.card-photo{width:100%;height:120px;object-fit:cover;display:block}
+.card-body{padding:14px}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start}
+.item-name{font-family:var(--font-head);font-size:16px;font-weight:800;margin-bottom:4px}
+.item-loc{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.item-loc svg{width:12px;height:12px;flex-shrink:0}
+.status-chip{border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;letter-spacing:.8px;white-space:nowrap;flex-shrink:0}
+.chip-home  {background:color-mix(in srgb,var(--green)  18%,transparent);color:var(--green)}
+.chip-out   {background:color-mix(in srgb,var(--red)    18%,transparent);color:var(--red)}
+.chip-broken{background:color-mix(in srgb,var(--purple) 18%,transparent);color:var(--purple)}
+.chip-empty {background:color-mix(in srgb,var(--amber)  18%,transparent);color:var(--amber)}
+.borrower-row{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--amber)}
+.borrower-row svg{width:13px;height:13px}
+
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:80px 20px;color:var(--muted);text-align:center}
+.empty svg{opacity:.4}
+.empty p{font-size:15px;line-height:1.6}
+
+.overlay{display:none;position:fixed;inset:0;background:#000a;z-index:200;align-items:flex-end}
+.overlay.open{display:flex}
+.sheet{background:var(--card);border-radius:24px 24px 0 0;width:100%;max-height:92dvh;overflow-y:auto;padding:24px 24px calc(24px + env(safe-area-inset-bottom));animation:slideUp .25s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes fadeUp {from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.sheet-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:12px}
+.sheet-hdr h2{font-family:var(--font-head);font-size:20px;font-weight:800;flex:1}
+.close-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;flex-shrink:0}
+
+.detail-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--border);gap:12px}
+.detail-row .dl{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.8px;flex-shrink:0}
+.detail-row .dv{font-size:13px;text-align:right}
+.sec-label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin:16px 0 8px}
+
+.checkout-box{background:var(--panel);border-radius:14px;padding:16px;margin:16px 0}
+.checkout-box h3{font-family:var(--font-head);font-size:13px;margin-bottom:12px;color:var(--muted);letter-spacing:1px}
+.co-field{margin-bottom:10px}
+.co-field label{display:block;font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:5px}
+.co-field label .req{color:var(--red)}
+.co-input{width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:11px 14px;font-size:14px;font-family:var(--font-mono);outline:none;transition:border-color .15s}
+.co-input:focus{border-color:var(--green)}
+.co-input.err{border-color:var(--red)!important;animation:shake .3s ease}
+.co-input::placeholder{color:var(--muted)}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.co-err{font-size:11px;color:var(--red);margin-top:4px;display:none}
+.co-err.show{display:block}
+
+.report-row{display:flex;gap:8px;margin:12px 0}
+.report-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;border-radius:12px;border:1px solid var(--border);background:var(--panel);cursor:pointer;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--muted);transition:all .15s}
+.report-btn:active{opacity:.7}
+.report-btn.rb-broke{border-color:var(--purple);color:var(--purple);background:color-mix(in srgb,var(--purple) 10%,transparent)}
+.report-btn.rb-empty{border-color:var(--amber); color:var(--amber); background:color-mix(in srgb,var(--amber)  10%,transparent)}
+
+.qr-toggle{display:flex;align-items:center;gap:8px;padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer;color:var(--green);font-size:14px;font-weight:600;background:none;border-top:none;border-left:none;border-right:none;width:100%;font-family:var(--font-mono)}
+.qr-box{display:none;flex-direction:column;align-items:center;gap:12px;padding:20px 0;border-bottom:1px solid var(--border)}
+.qr-box.open{display:flex}
+.qr-hint{font-size:11px;color:var(--muted);text-align:center;line-height:1.5}
+.qr-actions{display:flex;gap:10px;width:100%}
+
+.log-entry{padding:12px 0;border-bottom:1px solid var(--border)}
+.log-entry:last-child{border-bottom:none}
+.log-action{font-size:13px;font-weight:600;margin-bottom:3px}
+.log-meta{font-size:11px;color:var(--muted)}
+.log-detail{font-size:12px;color:var(--text);margin-top:3px;font-style:italic}
+
+.btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;border:none;font-family:var(--font-mono);letter-spacing:.5px;min-width:100px;transition:opacity .15s}
+.btn:active{opacity:.75}
+.btn-green {background:var(--green); color:var(--dark)}
+.btn-red   {background:color-mix(in srgb,var(--red)    15%,transparent);border:1px solid var(--red);   color:var(--red)}
+.btn-amber {background:color-mix(in srgb,var(--amber)  15%,transparent);border:1px solid var(--amber); color:var(--amber)}
+.btn-purple{background:color-mix(in srgb,var(--purple) 15%,transparent);border:1px solid var(--purple);color:var(--purple)}
+.btn-blue  {background:var(--blue); color:var(--dark)}
+.btn-ghost {background:var(--panel);color:var(--text)}
+.btn-full  {width:100%;flex:none;margin-top:8px}
+.action-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+
+/* ── Form ── */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:11px;color:#9999BB;font-weight:700;letter-spacing:1px;margin-bottom:6px}
+.field input,.field textarea{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:15px;font-family:var(--font-mono);outline:none;transition:border-color .15s}
+.field input:focus,.field textarea:focus{border-color:var(--green)}
+.field input.err{border-color:var(--red)}
+.field .hint{font-size:11px;color:var(--muted);margin-top:4px}
+.field .err-msg{font-size:11px;color:var(--red);margin-top:4px;display:none}
+.field textarea{min-height:70px;resize:none}
+
+/* ── Location Picker ── */
+.loc-picker{background:var(--panel);border-radius:14px;padding:14px;margin-bottom:16px}
+.loc-picker-hdr{font-size:11px;color:#9999BB;font-weight:700;letter-spacing:1px;margin-bottom:10px}
+
+/* ── Location autocomplete (item form) ── */
+.locac-wrap{position:relative}
+.locac-input{width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:14px;font-family:var(--font-mono);outline:none;box-sizing:border-box}
+.locac-input:focus{border-color:var(--blue)}
+.locac-input::placeholder{color:var(--muted)}
+.locac-drop{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;max-height:240px;overflow-y:auto;z-index:30;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.locac-drop.open{display:block}
+.locac-row{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .12s}
+.locac-row:last-child{border-bottom:none}
+.locac-row:active{background:var(--panel)}
+.locac-row.highlight{background:color-mix(in srgb,var(--blue) 14%,transparent)}
+.locac-row .lr-emoji{font-size:18px;flex-shrink:0;line-height:1}
+.locac-row .lr-main{flex:1;min-width:0}
+.locac-row .lr-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.locac-row .lr-path{font-size:10px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.locac-row .lr-badge{font-size:9px;color:var(--blue);background:color-mix(in srgb,var(--blue) 16%,transparent);padding:2px 6px;border-radius:5px;font-weight:700;letter-spacing:.5px;flex-shrink:0}
+.locac-row.new .lr-badge{color:var(--green);background:color-mix(in srgb,var(--green) 16%,transparent)}
+.locac-hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+.loc-breadcrumb{font-size:12px;color:var(--blue);margin-bottom:10px;min-height:18px;line-height:1.5}
+.loc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.loc-grid.col2{grid-template-columns:repeat(2,1fr)}
+.loc-grid.col4{grid-template-columns:repeat(4,1fr)}
+.loc-grid.col5{grid-template-columns:repeat(5,1fr)}
+.loc-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 6px;font-size:12px;font-weight:700;font-family:var(--font-mono);color:var(--text);cursor:pointer;text-align:center;transition:all .15s;line-height:1.3}
+.loc-btn:active,.loc-btn.sel{background:var(--blue);border-color:var(--blue);color:var(--dark)}
+.loc-back{background:none;border:none;color:var(--muted);font-size:12px;font-family:var(--font-mono);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px;margin-top:4px}
+.loc-result{background:var(--card);border:1px solid var(--blue);border-radius:10px;padding:12px 14px;margin-top:8px;font-size:13px;color:var(--blue);font-weight:700;line-height:1.5}
+.loc-err{font-size:11px;color:var(--red);margin-top:6px;display:none}
+.loc-err.show{display:block}
+
+/* Photo upload */
+.photo-upload{position:relative;width:100%;height:150px;background:var(--panel);border:2px dashed var(--border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;overflow:hidden;transition:border-color .15s}
+.photo-upload:active{border-color:var(--green)}
+.photo-upload img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.photo-upload input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.photo-upload .ph-label{color:var(--muted);font-size:13px;font-weight:600;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:1}
+.photo-remove{position:absolute;top:8px;right:8px;background:#000a;border:none;border-radius:8px;padding:6px 10px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;z-index:2;font-family:var(--font-mono)}
+
+/* Scanner */
+#scanner-wrap{position:relative;margin:0 16px;border-radius:16px;overflow:hidden;background:#000;height:240px;flex-shrink:0}
+#scanner-video{width:100%;height:100%;object-fit:cover}
+.viewfinder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.vf-box{width:180px;height:180px;position:relative}
+.vf-corner{position:absolute;width:22px;height:22px;border-color:var(--green);border-style:solid}
+.vf-corner.tl{top:0;left:0;border-width:3px 0 0 3px}
+.vf-corner.tr{top:0;right:0;border-width:3px 3px 0 0}
+.vf-corner.bl{bottom:0;left:0;border-width:0 0 3px 3px}
+.vf-corner.br{bottom:0;right:0;border-width:0 3px 3px 0}
+.scan-hint-txt{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:12px;color:#ffffffAA}
+.manual-row{display:flex;gap:10px;margin:12px 16px 0}
+.manual-row input{flex:1;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:14px;font-family:var(--font-mono);outline:none}
+.manual-row button{background:var(--green);border:none;border-radius:10px;padding:12px 16px;cursor:pointer}
+.not-found{display:flex;align-items:center;gap:8px;background:color-mix(in srgb,var(--red) 15%,transparent);border:1px solid var(--red);border-radius:10px;padding:12px;margin:12px 16px 0}
+.not-found span{flex:1;color:var(--red);font-size:13px}
+.perm-box{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:40px;text-align:center}
+.perm-box h2{font-family:var(--font-head);font-size:22px}
+.perm-box p{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* Missing banner */
+.missing-banner{background:color-mix(in srgb,var(--red) 10%,transparent);border:1px solid color-mix(in srgb,var(--red) 30%,transparent);border-radius:14px;padding:14px 16px;margin:0 16px 12px;display:none}
+.missing-banner.show{display:block}
+.missing-banner h3{color:var(--red);font-family:var(--font-head);font-size:14px;margin-bottom:8px}
+.missing-item-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid color-mix(in srgb,var(--red) 20%,transparent)}
+.missing-item-row:last-child{border-bottom:none;padding-bottom:0}
+.mi-name{font-size:13px;font-weight:600}
+.mi-who{font-size:11px;color:var(--amber)}
+
+/* Missing screen */
+.out-row{display:flex;align-items:flex-start;gap:12px;padding:14px;border-bottom:1px solid var(--border);cursor:pointer}
+.out-row:last-child{border-bottom:none}
+.out-row:active{opacity:.7}
+.out-photo{width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--panel);display:flex;align-items:center;justify-content:center}
+.out-name{font-family:var(--font-head);font-size:14px;font-weight:700}
+.out-who{font-size:12px;color:var(--amber);margin-top:2px}
+.out-purpose{font-size:12px;color:var(--muted);margin-top:2px;font-style:italic}
+.out-when{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* Location QR builder */
+.loc-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:all .15s}
+.loc-card:active,.loc-card.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,transparent)}
+.loc-card .lc-icon{font-size:24px;flex-shrink:0}
+.loc-card .lc-name{font-family:var(--font-head);font-size:15px;font-weight:700}
+.loc-card .lc-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.loc-card .lc-check{margin-left:auto;color:var(--blue);display:none}
+.loc-card.selected .lc-check{display:block}
+.num-picker{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
+.num-btn{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 4px;font-size:14px;font-weight:800;font-family:var(--font-head);color:var(--text);cursor:pointer;text-align:center;transition:all .15s}
+.num-btn:active,.num-btn.selected{background:var(--blue);border-color:var(--blue);color:var(--dark)}
+.custom-input-row{display:flex;gap:10px;margin-bottom:16px}
+.custom-input-row input{flex:1;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:14px;font-family:var(--font-mono);outline:none;transition:border-color .15s}
+.custom-input-row input:focus{border-color:var(--blue)}
+.custom-input-row input::placeholder{color:var(--muted)}
+.custom-input-row button{background:var(--blue);border:none;border-radius:10px;padding:12px 16px;color:var(--dark);font-weight:800;font-family:var(--font-mono);cursor:pointer;font-size:13px}
+.loc-code-preview{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;text-align:center}
+.loc-code-big{font-family:var(--font-head);font-size:28px;font-weight:900;color:var(--blue);letter-spacing:3px}
+.loc-code-sub{font-size:12px;color:var(--muted);margin-top:4px}
+.steps-row{display:flex;align-items:center;gap:6px;margin-bottom:20px}
+.step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;border:2px solid var(--border);color:var(--muted);background:var(--panel);transition:all .2s}
+.step-dot.active{border-color:var(--blue);color:var(--blue);background:color-mix(in srgb,var(--blue) 15%,transparent)}
+.step-dot.done{border-color:var(--green);color:var(--dark);background:var(--green)}
+.step-line{flex:1;height:2px;background:var(--border);border-radius:2px;transition:background .2s}
+.step-line.done{background:var(--green)}
+.step-label{font-size:10px;color:var(--muted);letter-spacing:.8px;font-weight:700;margin-bottom:6px}
+.saved-loc-row{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);gap:12px}
+.saved-loc-row:last-child{border-bottom:none}
+.saved-loc-code{font-family:var(--font-head);font-size:16px;font-weight:900;color:var(--blue);min-width:80px}
+.saved-loc-name{flex:1;font-size:12px;color:var(--muted)}
+.icon-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;color:var(--muted);font-size:12px;font-family:var(--font-mono);display:flex;align-items:center;gap:4px;white-space:nowrap}
+.icon-btn:active{opacity:.7}
+.icon-btn.blue{border-color:var(--blue);color:var(--blue)}
+.icon-btn.red {border-color:var(--red); color:var(--red)}
+.section-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.section-title{font-size:11px;font-weight:800;letter-spacing:1.5px;margin-bottom:10px;margin-top:24px}
+
+#install-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:300;background:var(--green);color:var(--dark);padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));flex-direction:row;align-items:center;gap:10px;font-size:13px;font-weight:700}
+#install-banner button{margin-left:auto;background:var(--dark);color:var(--green);border:none;border-radius:8px;padding:6px 14px;font-weight:800;font-family:var(--font-mono);cursor:pointer}
+#install-banner .dismiss{background:none;color:var(--dark);opacity:.6;padding:6px;margin-left:0}
+
+@media print{
+  body *{display:none!important}
+  #print-area{display:block!important;padding:20px;font-family:sans-serif}
+  .print-qr-item{display:inline-block;margin:12px;text-align:center;break-inside:avoid}
+  .print-qr-item p{font-size:12px;margin-top:6px;font-weight:700}
+  .print-qr-item span{font-size:10px;color:#666;display:block}
+}
+#print-area{display:none}
+
+/* ── Shopping Kanban Board ── */
+.kb-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px}
+.kb-stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 4px;text-align:center}
+.kb-stat-num{font-family:var(--font-head);font-size:22px;font-weight:900;line-height:1}
+.kb-stat-lbl{font-size:8px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-top:5px}
+.kb-stat.need .kb-stat-num{color:var(--amber)}
+.kb-stat.ordered .kb-stat-num{color:var(--blue)}
+.kb-stat.arrived .kb-stat-num{color:var(--purple)}
+.kb-stat.stocked .kb-stat-num{color:var(--green)}
+
+.kb-col{margin-bottom:22px}
+.kb-col-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px}
+.kb-col-title{display:flex;align-items:center;gap:8px;font-family:var(--font-head);font-size:13px;font-weight:800;letter-spacing:1.5px}
+.kb-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.kb-col.need .kb-dot{background:var(--amber)}
+.kb-col.need .kb-col-title{color:var(--amber)}
+.kb-col.ordered .kb-dot{background:var(--blue)}
+.kb-col.ordered .kb-col-title{color:var(--blue)}
+.kb-col.arrived .kb-dot{background:var(--purple)}
+.kb-col.arrived .kb-col-title{color:var(--purple)}
+.kb-col.stocked .kb-dot{background:var(--green)}
+.kb-col.stocked .kb-col-title{color:var(--green)}
+.kb-col-count{font-size:11px;color:var(--muted);font-weight:700;background:var(--panel);padding:3px 9px;border-radius:10px}
+
+.kb-card{background:var(--card);border:1px solid var(--border);border-left-width:3px;border-radius:10px;padding:11px 13px;margin-bottom:8px;cursor:pointer;animation:fadeUp .2s ease both;transition:opacity .15s,transform .1s}
+.kb-card:active{opacity:.7;transform:scale(.99)}
+.kb-col.need .kb-card{border-left-color:var(--amber)}
+.kb-col.ordered .kb-card{border-left-color:var(--blue)}
+.kb-col.arrived .kb-card{border-left-color:var(--purple)}
+.kb-col.stocked .kb-card{border-left-color:var(--green);opacity:.65}
+.kb-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.kb-card-name{font-family:var(--font-head);font-size:14px;font-weight:700;flex:1;line-height:1.3}
+.kb-card-qty{font-size:11px;color:var(--text);font-weight:700;background:var(--panel);padding:2px 8px;border-radius:6px;flex-shrink:0}
+.kb-card-notes{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4}
+.kb-card-link{font-size:10px;color:var(--blue);margin-top:6px;display:flex;align-items:center;gap:4px}
+.kb-empty{font-size:11px;color:var(--muted);text-align:center;padding:14px;background:var(--panel);border-radius:10px;border:1px dashed var(--border);font-style:italic}
+
+.kb-fab{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));right:18px;background:var(--amber);color:var(--dark);border:none;border-radius:50%;width:54px;height:54px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(255,176,32,.35);cursor:pointer;z-index:50}
+.kb-fab:active{opacity:.8;transform:scale(.95)}
+
+.shop-toggle-row{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;cursor:pointer}
+.shop-toggle-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--amber);cursor:pointer;flex-shrink:0}
+.shop-toggle-row label{font-size:13px;cursor:pointer;flex:1;font-family:var(--font-mono)}
+
+/* ── Header Menu Button ── */
+.hdr-menu{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:var(--text);cursor:pointer;flex-shrink:0}
+.hdr-menu:active{opacity:.7}
+
+/* ── Inline Scan Button (next to text inputs) ── */
+.field-with-scan{position:relative}
+.field-with-scan input{padding-right:48px}
+.inline-scan-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:var(--panel);border:1px solid var(--border);border-radius:8px;width:36px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--blue)}
+.inline-scan-btn:active{opacity:.6}
+
+/* ── Tools menu rows ── */
+.tool-row{display:flex;align-items:center;gap:14px;padding:14px;background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;width:100%;color:var(--text);font-family:var(--font-mono);text-align:left;transition:opacity .15s}
+.tool-row:active{opacity:.7}
+.tool-row .ti{width:38px;height:38px;border-radius:10px;background:var(--card);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--blue)}
+.tool-row.green .ti{color:var(--green)}
+.tool-row.amber .ti{color:var(--amber)}
+.tool-row .tc{flex:1;min-width:0}
+.tool-row .tt{font-family:var(--font-head);font-size:14px;font-weight:700;margin-bottom:2px}
+.tool-row .ts{font-size:11px;color:var(--muted);line-height:1.4}
+
+/* ── OCR camera UI ── */
+.ocr-stage{background:var(--panel);border:1px dashed var(--border);border-radius:14px;padding:24px;text-align:center;margin-bottom:14px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.ocr-stage img{max-width:100%;max-height:180px;border-radius:10px;display:block}
+.ocr-progress{width:100%;height:6px;background:var(--card);border-radius:3px;overflow:hidden;margin-top:10px}
+.ocr-progress-bar{height:100%;background:var(--blue);width:0;transition:width .25s}
+.ocr-status{font-size:12px;color:var(--muted);margin-top:8px}
+.ocr-result{width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:14px;font-family:var(--font-mono);min-height:80px;resize:vertical;outline:none;margin-bottom:10px}
+.ocr-result:focus{border-color:var(--blue)}
+.ocr-hint{font-size:11px;color:var(--muted);text-align:center;line-height:1.5;margin-bottom:12px}
+.ocr-candidates{display:none;margin-bottom:14px}
+.ocr-cand{display:block;width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:10px 12px;margin-bottom:6px;font-family:var(--font-mono);font-size:13px;text-align:left;cursor:pointer;word-break:break-all;line-height:1.4;transition:opacity .15s}
+.ocr-cand:active{opacity:.7}
+.ocr-cand.top{border-left-color:var(--green);background:color-mix(in srgb,var(--green) 8%,transparent)}
+
+/* ── Conflict resolution ── */
+.conf-item{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+.conf-row{font-size:12px;color:var(--muted);margin-top:4px}
+.conf-row strong{color:var(--text);font-weight:700}
+.conf-progress{font-size:11px;color:var(--muted);margin-bottom:8px;text-align:center}
+
+/* ── Container/Slot grid for new locations builder ── */
+.loc-breadcrumb{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:12px;flex-wrap:wrap}
+.loc-breadcrumb .crumb{padding:4px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer}
+.loc-breadcrumb .crumb:active{opacity:.7}
+.loc-breadcrumb .crumb.active{background:var(--blue);color:var(--dark);border-color:var(--blue)}
+.loc-breadcrumb .crumb-sep{color:var(--muted)}
+
+.cnt-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.cnt-tile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 12px;cursor:pointer;text-align:left;color:var(--text);font-family:var(--font-mono);transition:opacity .15s,transform .1s;display:flex;flex-direction:column;gap:6px;min-height:88px}
+.cnt-tile:active{opacity:.7;transform:scale(.98)}
+.cnt-tile.add{border-style:dashed;align-items:center;justify-content:center;color:var(--blue);text-align:center;background:transparent}
+.cnt-tile.add svg{width:24px;height:24px}
+.cnt-tile-top{display:flex;align-items:center;gap:8px}
+.cnt-tile-icon{font-size:20px;line-height:1}
+.cnt-tile-type{font-size:9px;color:var(--muted);font-weight:700;letter-spacing:1px}
+.cnt-tile-name{font-family:var(--font-head);font-size:14px;font-weight:700;line-height:1.2;word-break:break-word}
+.cnt-tile-meta{font-size:10px;color:var(--muted);margin-top:auto;display:flex;justify-content:space-between;align-items:center}
+.cnt-tile-code{font-family:var(--font-mono);color:var(--blue);font-weight:700}
+
+.type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.type-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 6px;cursor:pointer;color:var(--text);font-family:var(--font-mono);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:opacity .15s}
+.type-btn:active{opacity:.7}
+.type-btn.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
+.type-btn .ti-emoji{font-size:22px;line-height:1}
+
+.loc-tile-actions{display:flex;gap:4px}
+.loc-tile-actions button{background:transparent;border:none;color:var(--muted);padding:4px;cursor:pointer;border-radius:6px}
+.loc-tile-actions button:active{background:var(--panel)}
+.loc-tile-actions .qr{color:var(--blue)}
+.loc-tile-actions .del{color:var(--red)}
+</style>
+</head>
+<body>
+<div id="install-banner">
+  <span>🏠 Add MyStuff to your home screen!</span>
+  <button id="install-btn">Install</button>
+  <button class="dismiss" id="dismiss-banner">✕</button>
+</div>
+<div id="print-area"></div>
+
+<div id="app">
+  <!-- STUFF -->
+  <div class="screen active" id="screen-stuff">
+    <div class="hdr">
+      <h1>MY STUFF</h1>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="out-badge" class="badge badge-red" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span id="out-count">0</span> OUT
+        </div>
+        <button class="hdr-menu" id="stuff-menu-btn" aria-label="Inventory tools">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="missing-banner" class="missing-banner"></div>
+    <div class="search-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--muted)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" id="search-inp" placeholder="Search items…">
+    </div>
+    <div class="pills" id="filter-pills"></div>
+    <div class="scroll" id="item-list"></div>
+  </div>
+
+  <!-- SCAN -->
+  <div class="screen" id="screen-scan">
+    <div class="hdr"><h1>SCAN</h1></div>
+    <div id="cam-perm-box" class="perm-box" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" style="width:52px;height:52px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <h2>Camera Needed</h2>
+      <p>Allow camera access to scan item and location QR codes.</p>
+      <button class="btn btn-green" id="req-cam-btn" style="max-width:200px">Allow Camera</button>
+    </div>
+    <div id="scanner-wrap">
+      <video id="scanner-video" autoplay playsinline muted></video>
+      <div class="viewfinder"><div class="vf-box"><div class="vf-corner tl"></div><div class="vf-corner tr"></div><div class="vf-corner bl"></div><div class="vf-corner br"></div></div></div>
+      <div class="scan-hint-txt">Scan an item or location QR code</div>
+    </div>
+    <div class="manual-row">
+      <input type="text" id="manual-inp" placeholder="Or type item name…">
+      <button id="manual-btn"><svg viewBox="0 0 24 24" fill="none" stroke="var(--dark)" stroke-width="2.5" style="width:18px;height:18px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+    </div>
+    <div id="not-found-bar" class="not-found" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="not-found-text"></span>
+      <button style="background:none;border:none;color:var(--muted);cursor:pointer" id="nf-close">✕</button>
+    </div>
+    <div class="scroll" style="padding-top:12px"><p style="color:var(--muted);font-size:12px;text-align:center;line-height:1.6">Scan item QR codes to check in/out.<br>Scan location QR codes to see what belongs there.</p></div>
+  </div>
+
+  <!-- ADD -->
+  <div class="screen" id="screen-add">
+    <div class="hdr" style="padding-bottom:4px">
+      <button id="add-back" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:20px;height:20px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+      <h1 id="form-title">ADD ITEM</h1>
+      <div style="width:34px"></div>
+    </div>
+    <div class="scroll">
+      <div class="field">
+        <label>PHOTO</label>
+        <div class="photo-upload" id="photo-upload-box">
+          <img id="photo-preview" style="display:none" alt="">
+          <input type="file" accept="image/*" id="photo-input">
+          <div class="ph-label" id="ph-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:28px;height:28px;opacity:.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Tap to add a photo
+          </div>
+          <button class="photo-remove" id="photo-remove" style="display:none">✕ Remove</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>ITEM NAME *</label>
+        <div class="field-with-scan">
+          <input type="text" id="f-name" placeholder="e.g. Black PlayStation Controller">
+          <button class="inline-scan-btn" type="button" data-ocr-target="f-name" aria-label="Scan text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+        </div>
+        <div class="err-msg" id="f-name-err">Name is required</div>
+      </div>
+
+      <!-- Location autocomplete -->
+      <div class="loc-picker" id="loc-picker">
+        <div class="loc-picker-hdr">WHERE DOES IT LIVE? *</div>
+        <div class="locac-wrap">
+          <input type="text" class="locac-input" id="locac-input" placeholder="Type to search or add a new location…" autocomplete="off">
+          <div class="locac-drop" id="locac-drop"></div>
+        </div>
+        <div class="locac-hint">Type to filter your saved locations. Pick one from the list, or type something new (free text is fine).</div>
+        <div class="loc-err" id="loc-err">Please enter a location</div>
+      </div>
+
+      <div class="field">
+        <label>DESCRIPTION</label>
+        <input type="text" id="f-desc" placeholder="Color, brand, model, size…">
+      </div>
+      <div class="field">
+        <label>SERIAL / ID NUMBER</label>
+        <div class="field-with-scan">
+          <input type="text" id="f-serial" placeholder="For electronics, tools, etc.">
+          <button class="inline-scan-btn" type="button" data-ocr-target="f-serial" aria-label="Scan text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+        </div>
+        <div class="hint">Useful as proof of ownership. Tap the camera to scan with OCR.</div>
+      </div>
+      <div class="field">
+        <label>NOTES</label>
+        <textarea id="f-notes" placeholder="Any other details…"></textarea>
+      </div>
+      <button class="btn btn-green btn-full" id="save-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><polyline points="20 6 9 17 4 12"/></svg>
+        <span id="save-btn-label">Add Item</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- PLACES -->
+  <div class="screen" id="screen-locations">
+    <div class="hdr"><h1>PLACES</h1></div>
+    <div class="scroll" id="loc-content"></div>
+  </div>
+
+  <!-- MISSING -->
+  <div class="screen" id="screen-missing">
+    <div class="hdr"><h1>MISSING</h1></div>
+    <div class="scroll" id="missing-content"></div>
+  </div>
+
+  <!-- SHOP -->
+  <div class="screen" id="screen-shop">
+    <div class="hdr">
+      <h1>SHOPPING</h1>
+      <button class="hdr-menu" id="shop-menu-btn" aria-label="Shopping tools">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+      </button>
+    </div>
+    <div class="scroll" id="shop-content"></div>
+    <button class="kb-fab" id="shop-add-fab" aria-label="Add shopping item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:24px;height:24px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <nav>
+    <button class="active" data-screen="stuff">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>STUFF
+    </button>
+    <button data-screen="scan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>SCAN
+    </button>
+    <button data-screen="add">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>ADD
+    </button>
+    <button data-screen="locations">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>PLACES
+    </button>
+    <button data-screen="missing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>MISSING
+    </button>
+    <button data-screen="shop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>SHOP
+    </button>
+  </nav>
+</div>
+
+<!-- ITEM DETAIL MODAL -->
+<div class="overlay" id="detail-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="d-name"></h2><button class="close-btn" id="detail-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div id="d-photo-wrap" style="margin-bottom:14px;display:none"><img id="d-photo" style="width:100%;height:180px;object-fit:cover;border-radius:12px" alt=""></div>
+    <div id="d-status-row" style="margin-bottom:16px"></div>
+    <div id="d-rows"></div>
+    <div class="sec-label">REPORT AN ISSUE</div>
+    <div class="report-row">
+      <button class="report-btn rb-broke" id="d-broke"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>OOPS, BROKE IT</button>
+      <button class="report-btn rb-empty" id="d-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>USED THE LAST</button>
+    </div>
+    <div class="checkout-box" id="checkout-box">
+      <h3 id="checkout-title">LEND THIS ITEM</h3>
+      <div class="co-field" id="co-who-field">
+        <label>WHO'S TAKING IT? <span class="req">*</span></label>
+        <input type="text" class="co-input" id="borrower-inp" placeholder="Enter their name">
+        <div class="co-err" id="borrower-err">A name is required</div>
+      </div>
+      <div class="co-field" id="co-purpose-field"><label>WHAT FOR?</label><input type="text" class="co-input" id="purpose-inp" placeholder="e.g. fixing the sink"></div>
+      <div class="co-field" id="co-where-field"><label>TAKING IT WHERE?</label><input type="text" class="co-input" id="where-inp" placeholder="e.g. bathroom, outside"></div>
+      <button class="btn btn-full" id="checkout-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg><span id="checkout-btn-label">Mark as Out</span></button>
+    </div>
+    <button class="qr-toggle" id="qr-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h.01M17 14h.01M14 17h.01M17 17h.01"/></svg><span id="qr-toggle-label">Show QR Code</span></button>
+    <div class="qr-box" id="qr-box">
+      <div id="qr-canvas"></div>
+      <div class="qr-hint">Stick this on the item — scan to look up instantly</div>
+      <div class="qr-actions">
+        <button class="btn btn-ghost" id="qr-download" style="font-size:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</button>
+        <button class="btn btn-ghost" id="qr-print" style="font-size:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print</button>
+      </div>
+    </div>
+    <div id="activity-section"></div>
+    <div class="action-row" style="margin-top:20px">
+      <button class="btn btn-ghost" id="d-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit</button>
+      <button class="btn btn-red" id="d-delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCAN RESULT MODAL -->
+<div class="overlay" id="scan-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="sr-name"></h2><button class="close-btn" id="scan-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div id="sr-photo-wrap" style="margin-bottom:12px;display:none"><img id="sr-photo" style="width:100%;height:140px;object-fit:cover;border-radius:12px" alt=""></div>
+    <div id="sr-status" style="margin-bottom:12px"></div>
+    <div id="sr-rows"></div>
+    <div id="sr-actions" style="margin-top:16px"></div>
+    <button class="btn btn-ghost btn-full" id="scan-again-btn" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>Scan Another</button>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="overlay" id="report-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="report-title"></h2><button class="close-btn" id="report-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <p id="report-sub" style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6"></p>
+    <div class="field"><label id="report-field-label">DETAILS</label><textarea id="report-details" placeholder="Optional…"></textarea></div>
+    <div class="shop-toggle-row" id="report-shop-toggle" style="display:none">
+      <input type="checkbox" id="report-add-shop" checked>
+      <label for="report-add-shop">🛒 Add to shopping list</label>
+    </div>
+    <button class="btn btn-full" id="report-confirm">Confirm</button>
+  </div>
+</div>
+
+<!-- LOCATION QR MODAL -->
+<div class="overlay" id="loc-qr-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="lq-title"></h2><button class="close-btn" id="lq-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div id="lq-code-display" style="text-align:center;margin-bottom:16px"></div>
+    <div id="lq-canvas" style="display:flex;justify-content:center;margin-bottom:12px"></div>
+    <div class="qr-hint" style="margin-bottom:16px">Post this QR in the location — scan it to see what belongs there.</div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" id="lq-download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</button>
+      <button class="btn btn-ghost" id="lq-print"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOCATION SCAN RESULT MODAL -->
+<div class="overlay" id="loc-scan-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <div><div style="font-size:10px;color:var(--blue);font-weight:700;letter-spacing:1px;margin-bottom:4px">📍 LOCATION</div><h2 id="ls-name"></h2></div>
+      <button class="close-btn" id="ls-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="ls-code" style="font-family:var(--font-head);font-size:20px;font-weight:900;color:var(--blue);margin-bottom:16px"></div>
+    <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">ITEMS THAT BELONG HERE</div>
+    <div id="ls-items"></div>
+  </div>
+</div>
+
+<!-- SHOP CARD DETAIL MODAL -->
+<div class="overlay" id="shop-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="sc-name"></h2><button class="close-btn" id="shop-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div id="sc-status" style="margin-bottom:14px"></div>
+    <div id="sc-rows"></div>
+    <div class="sec-label">MOVE TO</div>
+    <div id="sc-moves" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px"></div>
+    <div class="action-row" style="margin-top:8px">
+      <button class="btn btn-ghost" id="sc-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit</button>
+      <button class="btn btn-red" id="sc-delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHOP ADD/EDIT MODAL -->
+<div class="overlay" id="shop-edit-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="se-title">Add to Shopping List</h2><button class="close-btn" id="se-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="field"><label>ITEM NAME *</label><input type="text" id="se-name" placeholder="e.g. Toothpaste"><div class="err-msg" id="se-name-err">Name is required</div></div>
+    <div class="field"><label>QUANTITY</label><input type="number" id="se-qty" min="1" value="1"></div>
+    <div class="field"><label>NOTES</label><textarea id="se-notes" placeholder="Brand, size, anything specific…"></textarea></div>
+    <button class="btn btn-amber btn-full" id="se-save">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+      <span id="se-save-label">Add to List</span>
+    </button>
+  </div>
+</div>
+
+<!-- INVENTORY TOOLS MODAL -->
+<div class="overlay" id="stuff-tools-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2>Inventory Tools</h2><button class="close-btn" id="stuff-tools-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">DATA</div>
+    <button class="tool-row green" id="export-inv-btn">
+      <div class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div class="tc"><div class="tt">Export to CSV</div><div class="ts" id="export-inv-sub">Download a spreadsheet of all items</div></div>
+    </button>
+    <button class="tool-row" id="import-inv-btn">
+      <div class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+      <div class="tc"><div class="tt">Import from CSV</div><div class="ts">Bulk-add items from a spreadsheet</div></div>
+    </button>
+    <input type="file" id="import-inv-file" accept=".csv,text/csv" style="display:none">
+    <div style="font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5">CSV columns required: <strong style="color:var(--text)">name</strong>. Optional: room, location, description, serial, notes, status (home/out/broken/empty), borrower, purpose, taken_to.</div>
+
+    <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin:20px 0 10px">STORAGE</div>
+    <div id="storage-stats" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;font-size:12px;line-height:1.6"></div>
+    <button class="tool-row amber" id="shrink-photos-btn">
+      <div class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></div>
+      <div class="tc"><div class="tt">Shrink All Photos</div><div class="ts" id="shrink-sub">Compress existing photos to free up space</div></div>
+    </button>
+  </div>
+</div>
+
+<!-- SHOPPING TOOLS MODAL -->
+<div class="overlay" id="shop-tools-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2>Shopping Tools</h2><button class="close-btn" id="shop-tools-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">DATA</div>
+    <button class="tool-row green" id="export-shop-btn">
+      <div class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div class="tc"><div class="tt">Export to CSV</div><div class="ts" id="export-shop-sub">Download the current shopping list</div></div>
+    </button>
+    <button class="tool-row amber" id="import-shop-btn">
+      <div class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+      <div class="tc"><div class="tt">Import from CSV</div><div class="ts">Bulk-add to "Need to Buy" column</div></div>
+    </button>
+    <input type="file" id="import-shop-file" accept=".csv,text/csv" style="display:none">
+    <div style="font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5">CSV columns required: <strong style="color:var(--text)">name</strong>. Optional: quantity, notes, status (need/ordered/arrived/stocked).</div>
+  </div>
+</div>
+
+<!-- OCR MODAL -->
+<div class="overlay" id="ocr-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2>Scan Text</h2><button class="close-btn" id="ocr-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="ocr-hint">Take or pick a photo of a label, serial number, or text. Best with good lighting and the camera held steady.</div>
+    <div class="ocr-stage" id="ocr-stage">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" style="width:42px;height:42px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <div style="font-size:13px;color:var(--muted)">No image yet</div>
+    </div>
+    <input type="file" id="ocr-file" accept="image/*" style="display:none">
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <button class="btn btn-blue" id="ocr-pick" style="flex:1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Take / Pick Photo
+      </button>
+    </div>
+    <div id="ocr-candidates" class="ocr-candidates"></div>
+    <div id="ocr-result-wrap" style="display:none">
+      <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:6px">RECOGNIZED TEXT (EDIT BEFORE APPLYING)</div>
+      <textarea id="ocr-result" class="ocr-result" placeholder="Result will appear here…"></textarea>
+      <button class="btn btn-green btn-full" id="ocr-apply">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+        Use This Text
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CONTAINER MODAL -->
+<div class="overlay" id="add-container-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2>New Container</h2><button class="close-btn" id="ac-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Adding to <strong id="ac-room-label" style="color:var(--text)"></strong></div>
+    <div class="field"><label>NAME *</label><input type="text" id="ac-name" placeholder="e.g. Tool Box, Red Shelf, Workbench"><div class="err-msg" id="ac-name-err">Name is required</div></div>
+    <div class="field"><label>TYPE</label>
+      <div class="type-grid" id="ac-types"></div>
+    </div>
+    <button class="btn btn-blue btn-full" id="ac-save">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+      Create Container
+    </button>
+  </div>
+</div>
+
+<!-- ADD SLOT MODAL -->
+<div class="overlay" id="add-slot-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2 id="as-title">New Slot</h2><button class="close-btn" id="as-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Adding to <strong id="as-cnt-label" style="color:var(--text)"></strong></div>
+    <div class="field"><label>NAME *</label><input type="text" id="as-name" placeholder="e.g. Drawer 1, Top Shelf, Box A"><div class="err-msg" id="as-name-err">Name is required</div></div>
+    <button class="btn btn-blue btn-full" id="as-save">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+      Create Slot
+    </button>
+  </div>
+</div>
+
+<!-- IMPORT CONFLICT MODAL -->
+<div class="overlay" id="conflict-overlay">
+  <div class="sheet">
+    <div class="sheet-hdr"><h2>Duplicate Found</h2></div>
+    <div class="conf-progress" id="conf-progress"></div>
+    <div class="conf-item" id="conf-existing">
+      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:6px">ALREADY IN INVENTORY</div>
+      <div id="conf-existing-body"></div>
+    </div>
+    <div class="conf-item" id="conf-incoming" style="border-color:var(--blue)">
+      <div style="font-size:10px;color:var(--blue);font-weight:700;letter-spacing:1px;margin-bottom:6px">FROM IMPORT FILE</div>
+      <div id="conf-incoming-body"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
+      <button class="btn btn-ghost" id="conf-skip" style="font-size:11px;min-width:0">Skip</button>
+      <button class="btn btn-amber" id="conf-replace" style="font-size:11px;min-width:0">Replace</button>
+      <button class="btn btn-blue" id="conf-add" style="font-size:11px;min-width:0">Add Anyway</button>
+    </div>
+    <button class="btn btn-ghost btn-full" id="conf-cancel" style="margin-top:10px;font-size:12px">Cancel Import</button>
+  </div>
+</div>
+
+<!-- DEBUG: Eruda mobile console (remove when done debugging) -->
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init()</script>
+
+<script>
+// ═══════════════════════════════════════════════
+//  LOCATION HIERARCHY
+// ═══════════════════════════════════════════════
+// Each room defines its own structure.
+// A "path" is an array of strings building up to the final location label.
+// e.g. ["Carriage House","Garage","Red Double Top","Drawer 7"]
+
+const LOC_TREE = {
+  'Bedroom': {
+    type: 'shelf', // standard zone/slot
+  },
+  'Kitchen': { type: 'shelf' },
+  'Bathroom': { type: 'shelf' },
+  'Garage': { type: 'shelf' },
+  'Office': { type: 'shelf' },
+  'Outside': { type: 'shelf' },
+  'Lab': { type: 'shelf' },
+  'Snoopy Shed': { type: 'shelf' },
+  'Baby Room': {
+    type: 'custom',
+    sections: [
+      {
+        label: 'Left Column',
+        items: ['L1','L2','L3'],
+        subSlots: { 'L1': ['A','B','C','D'] }
+      },
+      {
+        label: 'Middle Column',
+        items: ['M1','M2','M3'],
+        subSlots: { 'M1': ['A','B','C'] }
+      },
+      {
+        label: 'Right Column',
+        items: ['R1','R2','R3'],
+        subSlots: { 'R1': ['A','B','C','D'] }
+      }
+    ]
+  },
+  'Carriage House': {
+    type: 'subroom',
+    subrooms: {
+      'Garage': {
+        type: 'garage',
+        options: ['Toolbox','Shelves'],
+        toolboxes: {
+          'Red Single (5 drawers)': { drawers: 5 },
+          'Red Double — Top (12 drawers)': { drawers: 12 },
+          'Red Double — Bottom (5 drawers)': { drawers: 5 },
+          'Blue Toolbox — Top (6 drawers)': { drawers: 6 },
+          'Blue Toolbox — Bottom (6 drawers)': { drawers: 6 },
+        }
+      },
+      'Room': { type: 'shelf' }
+    }
+  }
+};
+
+const ROOM_ICONS = {
+  'Bedroom':'🛏️','Kitchen':'🍳','Bathroom':'🚿','Garage':'🔧',
+  'Office':'💼','Outside':'🌿','Lab':'🔬','Snoopy Shed':'🐾',
+  'Baby Room':'🍼','Carriage House':'🏠'
+};
+
+const ROOMS = Object.keys(LOC_TREE);
+
+// Standard shelf zones A-J, slots 1-20
+const SHELF_ZONES = 'ABCDEFGHIJ'.split('');
+const SHELF_SLOTS = Array.from({length:20},(_,i)=>i+1);
+
+// ═══════════════════════════════════════════════
+//  DATA
+// ═══════════════════════════════════════════════
+const ITEMS_KEY='mystuff_v3', LOCS_KEY='mystuff_locations';
+function load(){try{return JSON.parse(localStorage.getItem(ITEMS_KEY)||'[]')}catch{return[]}}
+function save(items){
+  try{localStorage.setItem(ITEMS_KEY,JSON.stringify(items));return true;}
+  catch(e){
+    if(e.name==='QuotaExceededError'||e.code===22||e.code===1014){
+      alert('Storage is full!\n\nYour photos have filled up the browser storage. Open the menu (⋯) and tap "Storage Usage" to see details and shrink existing photos.');
+      return false;
+    }
+    throw e;
+  }
+}
+function loadLocs(){try{return JSON.parse(localStorage.getItem(LOCS_KEY)||'[]')}catch{return[]}}
+function saveLocs(l){localStorage.setItem(LOCS_KEY,JSON.stringify(l))}
+function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function qrItemVal(item){return`mystuff:item:${item.id}`}
+function qrLocVal(loc){return`mystuff:loc:${loc.code}`}
+function fmtDate(iso){return new Date(iso).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'})}
+function statusLabel(item){
+  if(item.status==='broken')return{label:'BROKEN',cls:'chip-broken',badgeCls:'purple'};
+  if(item.status==='empty') return{label:'EMPTY', cls:'chip-empty', badgeCls:'amber'};
+  if(item.status==='out')   return{label:'OUT',   cls:'chip-out',   badgeCls:'red'};
+  return{label:'HOME',cls:'chip-home',badgeCls:'green'};
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ═══════════════════════════════════════════════
+//  LOCATION AUTOCOMPLETE (item form)
+// ═══════════════════════════════════════════════
+let locValue = '';
+let locacHighlight = -1;
+let locacShownRows = [];
+
+function locReset(){
+  locValue = '';
+  const inp = document.getElementById('locac-input');
+  if(inp) inp.value = '';
+  closeLocDropdown();
+  document.getElementById('loc-err').classList.remove('show');
+}
+
+function inferRoom(locStr){
+  if(!locStr) return '';
+  const first = locStr.split(/\s*·\s*|\s*→\s*/)[0].trim();
+  return ROOMS.includes(first) ? first : '';
+}
+
+function buildLocOptions(query){
+  const locs = loadLocs();
+  const q = query.trim().toLowerCase();
+
+  const matched = locs
+    .map(l => {
+      const hay = (l.fullName + ' ' + l.code).toLowerCase();
+      const score = !q ? 0 : (hay.includes(q) ? (hay.indexOf(q) === 0 ? 2 : 1) : -1);
+      return {loc: l, score};
+    })
+    .filter(x => x.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .map(x => x.loc);
+
+  const rows = matched.slice(0, 12).map(l => {
+    const type = (l.type === 'container')
+      ? (CONTAINER_TYPE_MAP[l.containerType] || CONTAINER_TYPE_MAP.other)
+      : null;
+    return {
+      kind: 'saved',
+      value: l.fullName,
+      room: l.room,
+      emoji: type ? type.emoji : '📍',
+      name: l.type === 'slot' ? l.slotName : l.containerName,
+      path: l.fullName,
+      badge: l.code
+    };
+  });
+
+  ROOMS.forEach(r => {
+    if(!q || r.toLowerCase().includes(q)){
+      if(!rows.find(row => row.value === r)){
+        rows.push({
+          kind: 'room',
+          value: r,
+          room: r,
+          emoji: ROOM_ICONS[r] || '📦',
+          name: r,
+          path: 'Whole room (no container)',
+          badge: 'ROOM'
+        });
+      }
+    }
+  });
+
+  if(q && !rows.find(row => row.value.toLowerCase() === q)){
+    rows.unshift({
+      kind: 'new',
+      value: query.trim(),
+      room: inferRoom(query.trim()),
+      emoji: '✏️',
+      name: query.trim(),
+      path: 'Use as-is (free text)',
+      badge: 'NEW'
+    });
+  }
+
+  return rows.slice(0, 14);
+}
+
+function openLocDropdown(){
+  const inp = document.getElementById('locac-input');
+  const drop = document.getElementById('locac-drop');
+  const rows = buildLocOptions(inp.value);
+  locacShownRows = rows;
+  locacHighlight = -1;
+  if(!rows.length){ closeLocDropdown(); return; }
+  drop.innerHTML = rows.map((r, i) =>
+    `<div class="locac-row ${r.kind === 'new' ? 'new' : ''}" data-i="${i}">
+      <span class="lr-emoji">${r.emoji}</span>
+      <div class="lr-main"><div class="lr-name">${esc(r.name)}</div><div class="lr-path">${esc(r.path)}</div></div>
+      <span class="lr-badge">${esc(r.badge)}</span>
+    </div>`
+  ).join('');
+  drop.classList.add('open');
+  drop.querySelectorAll('[data-i]').forEach(el => {
+    el.addEventListener('mousedown', e => { e.preventDefault(); });
+    el.addEventListener('click', () => pickLocRow(parseInt(el.dataset.i)));
+  });
+}
+
+function closeLocDropdown(){
+  document.getElementById('locac-drop').classList.remove('open');
+  locacHighlight = -1;
+}
+
+function pickLocRow(i){
+  const row = locacShownRows[i]; if(!row) return;
+  document.getElementById('locac-input').value = row.value;
+  locValue = row.value;
+  closeLocDropdown();
+  document.getElementById('loc-err').classList.remove('show');
+}
+
+document.getElementById('locac-input').addEventListener('input', () => {
+  locValue = document.getElementById('locac-input').value;
+  openLocDropdown();
+});
+document.getElementById('locac-input').addEventListener('focus', openLocDropdown);
+document.getElementById('locac-input').addEventListener('blur', () => {
+  setTimeout(closeLocDropdown, 150);
+});
+document.getElementById('locac-input').addEventListener('keydown', e => {
+  const drop = document.getElementById('locac-drop');
+  if(!drop.classList.contains('open')){
+    if(e.key === 'ArrowDown'){ openLocDropdown(); e.preventDefault(); }
+    return;
+  }
+  if(e.key === 'ArrowDown'){
+    locacHighlight = Math.min(locacShownRows.length - 1, locacHighlight + 1);
+    updateLocHighlight(); e.preventDefault();
+  } else if(e.key === 'ArrowUp'){
+    locacHighlight = Math.max(0, locacHighlight - 1);
+    updateLocHighlight(); e.preventDefault();
+  } else if(e.key === 'Enter'){
+    if(locacHighlight >= 0){ pickLocRow(locacHighlight); e.preventDefault(); }
+    else { locValue = document.getElementById('locac-input').value.trim(); closeLocDropdown(); }
+  } else if(e.key === 'Escape'){
+    closeLocDropdown();
+  }
+});
+function updateLocHighlight(){
+  document.querySelectorAll('.locac-row').forEach((el, i) => {
+    el.classList.toggle('highlight', i === locacHighlight);
+    if(i === locacHighlight) el.scrollIntoView({block: 'nearest'});
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  NAV
+// ═══════════════════════════════════════════════
+let editingId=null;
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelector(`[data-screen="${name}"]`).classList.add('active');
+  if(name==='stuff')    renderStuff();
+  if(name==='scan')     initScanner();
+  if(name==='missing')  renderMissing();
+  if(name==='locations')renderLocations();
+  if(name==='shop')     renderShop();
+  if(name==='add'&&!editingId)resetForm();
+  if(name!=='scan')     stopScanner();
+}
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>showScreen(b.dataset.screen)));
+
+// ═══════════════════════════════════════════════
+//  STUFF LIST
+// ═══════════════════════════════════════════════
+let filterMode='All',searchQ='';
+function renderStuff(){
+  const items=load();
+  const outItems=items.filter(i=>i.status==='out');
+  document.getElementById('out-count').textContent=outItems.length;
+  document.getElementById('out-badge').style.display=outItems.length?'flex':'none';
+  const banner=document.getElementById('missing-banner');
+  if(outItems.length){
+    banner.classList.add('show');
+    banner.innerHTML=`<h3>⚠ ${outItems.length} item${outItems.length>1?'s':''} not home</h3>`+
+      outItems.slice(0,3).map(i=>`<div class="missing-item-row"><span class="mi-name">${esc(i.name)}</span><span class="mi-who">${i.borrower?'👤 '+esc(i.borrower):'unknown'}</span></div>`).join('')+
+      (outItems.length>3?`<div style="font-size:11px;color:var(--muted);margin-top:6px">+${outItems.length-3} more</div>`:'');
+  } else banner.classList.remove('show');
+
+  const rooms=[...new Set(items.map(i=>i.room))].sort();
+  const pillsEl=document.getElementById('filter-pills');
+  pillsEl.innerHTML=['All','Home','Out','Broken',...rooms].map(p=>{
+    let cls='pill';
+    if(p===filterMode)cls+=p==='Out'||p==='Broken'?' active-red':' active';
+    return`<button class="${cls}" data-f="${p}">${p}</button>`;
+  }).join('');
+  pillsEl.querySelectorAll('.pill').forEach(p=>p.addEventListener('click',()=>{filterMode=p.dataset.f;renderStuff()}));
+
+  let filtered=items.filter(i=>{
+    const mQ=!searchQ||i.name.toLowerCase().includes(searchQ)||(i.desc||'').toLowerCase().includes(searchQ)||(i.location||i.room||'').toLowerCase().includes(searchQ);
+    let mF=true;
+    if(filterMode==='Home')        mF=i.status==='home';
+    else if(filterMode==='Out')    mF=i.status==='out';
+    else if(filterMode==='Broken') mF=i.status==='broken'||i.status==='empty';
+    else if(filterMode!=='All')    mF=i.room===filterMode;
+    return mQ&&mF;
+  });
+
+  const list=document.getElementById('item-list');
+  if(!filtered.length){list.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:52px;height:52px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><p>${items.length?'No items match.':'No items yet.\nTap ADD to start tracking.'}</p></div>`;return;}
+  list.innerHTML=filtered.map(item=>{
+    const st=statusLabel(item);
+    const borderCls=item.status==='out'?'missing':item.status==='broken'||item.status==='empty'?'broken':'';
+    const locDisplay=item.location||item.room||'';
+    return`<div class="item-card ${borderCls}" data-id="${item.id}">
+      ${item.photo?`<img class="card-photo" src="${item.photo}" alt="">`:''}
+      <div class="card-body">
+        <div class="card-top">
+          <div style="flex:1;margin-right:8px">
+            <div class="item-name">${esc(item.name)}</div>
+            <div class="item-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(locDisplay)}</div>
+          </div>
+          <span class="status-chip ${st.cls}">${st.label}</span>
+        </div>
+        ${item.status==='out'&&item.borrower?`<div class="borrower-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>${esc(item.borrower)}${item.purpose?' · '+esc(item.purpose):''}</div>`:''}
+        ${item.status==='broken'?`<div style="font-size:12px;color:var(--purple);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">⚠ Reported broken</div>`:''}
+        ${item.status==='empty'?`<div style="font-size:12px;color:var(--amber);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">📦 Used the last of it</div>`:''}
+      </div></div>`;
+  }).join('');
+  list.querySelectorAll('.item-card').forEach(c=>c.addEventListener('click',()=>openDetail(c.dataset.id)));
+}
+document.getElementById('search-inp').addEventListener('input',e=>{searchQ=e.target.value.toLowerCase();renderStuff()});
+
+// ═══════════════════════════════════════════════
+//  DETAIL MODAL
+// ═══════════════════════════════════════════════
+let detailId=null,qrOpen=false,qrInstance=null;
+function openDetail(id){
+  const items=load();const item=items.find(i=>i.id===id);if(!item)return;
+  detailId=id;qrOpen=false;
+  document.getElementById('d-name').textContent=item.name;
+  const pw=document.getElementById('d-photo-wrap');
+  if(item.photo){pw.style.display='block';document.getElementById('d-photo').src=item.photo}else pw.style.display='none';
+  const st=statusLabel(item);
+  document.getElementById('d-status-row').innerHTML=`<span class="badge badge-${st.badgeCls}">${item.status==='home'?'✓ AT HOME':item.status==='out'?'⬆ OUT OF HOME':item.status==='broken'?'⚠ BROKEN':'📦 NEEDS RESTOCKING'}</span>`;
+  document.getElementById('d-rows').innerHTML=[
+    ['LOCATION', item.location||item.room||'—'],
+    item.desc?['DESCRIPTION',item.desc]:null,
+    item.serial?['SERIAL / ID',item.serial]:null,
+    item.notes?['NOTES',item.notes]:null,
+    ['ADDED',fmtDate(item.addedAt)],
+    item.status==='out'&&item.borrower?['BORROWED BY',item.borrower]:null,
+    item.status==='out'&&item.purpose?['PURPOSE',item.purpose]:null,
+    item.status==='out'&&item.whereAt?['TAKEN TO',item.whereAt]:null,
+    item.status==='out'&&item.checkedOutAt?['SINCE',fmtDate(item.checkedOutAt)]:null,
+  ].filter(Boolean).map(([l,v])=>`<div class="detail-row"><span class="dl">${l}</span><span class="dv">${esc(String(v))}</span></div>`).join('');
+  document.getElementById('d-broke').onclick=()=>openReport('broke',item);
+  document.getElementById('d-empty').onclick=()=>openReport('empty',item);
+  const isOut=item.status==='out';const isBrokenOrEmpty=item.status==='broken'||item.status==='empty';
+  document.getElementById('checkout-title').textContent=isOut?'MARK AS RETURNED':'LEND THIS ITEM';
+  document.getElementById('checkout-btn-label').textContent=isOut?'Mark as Returned':'Mark as Out';
+  document.getElementById('checkout-btn').className=`btn btn-full ${isOut?'btn-green':'btn-amber'}`;
+  const showFields=!isOut&&!isBrokenOrEmpty;
+  ['co-who-field','co-purpose-field','co-where-field'].forEach(id=>document.getElementById(id).style.display=showFields?'block':'none');
+  ['borrower-inp','purpose-inp','where-inp'].forEach(id=>{document.getElementById(id).value='';document.getElementById(id).classList.remove('err')});
+  document.getElementById('borrower-err').classList.remove('show');
+  const log=(item.log||[]).slice().reverse().slice(0,10);
+  document.getElementById('activity-section').innerHTML=log.length?`<div class="sec-label">ACTIVITY</div><div class="section-card">${log.map(e=>`<div class="log-entry"><div class="log-action" style="color:${e.type==='out'?'var(--amber)':e.type==='returned'?'var(--green)':e.type==='broken'?'var(--purple)':e.type==='empty'?'var(--amber)':'var(--muted)'}">${esc(e.label)}</div>${e.detail?`<div class="log-detail">${esc(e.detail)}</div>`:''}<div class="log-meta">${fmtDate(e.at)}</div></div>`).join('')}</div>`:'';
+  document.getElementById('qr-toggle-label').textContent='Show QR Code';
+  document.getElementById('qr-box').classList.remove('open');
+  document.getElementById('qr-canvas').innerHTML='';qrInstance=null;
+  document.getElementById('detail-overlay').classList.add('open');
+}
+
+document.getElementById('checkout-btn').addEventListener('click',()=>{
+  const items=load();const idx=items.findIndex(i=>i.id===detailId);if(idx===-1)return;
+  const item=items[idx];const isOut=item.status==='out';const now=new Date().toISOString();
+  if(isOut){
+    items[idx]={...item,status:'home',borrower:null,purpose:null,whereAt:null,checkedOutAt:null,log:[...(item.log||[]),{type:'returned',label:'Returned home',at:now}]};
+    save(items);document.getElementById('detail-overlay').classList.remove('open');renderStuff();
+  } else {
+    const who=document.getElementById('borrower-inp').value.trim();
+    if(!who){document.getElementById('borrower-inp').classList.add('err');document.getElementById('borrower-err').classList.add('show');document.getElementById('borrower-inp').focus();return;}
+    const purpose=document.getElementById('purpose-inp').value.trim();
+    const where=document.getElementById('where-inp').value.trim();
+    items[idx]={...item,status:'out',borrower:who,purpose:purpose||null,whereAt:where||null,checkedOutAt:now,log:[...(item.log||[]),{type:'out',label:`Taken by ${who}`,detail:[purpose&&`For: ${purpose}`,where&&`Going to: ${where}`].filter(Boolean).join(' · ')||null,at:now}]};
+    save(items);document.getElementById('detail-overlay').classList.remove('open');renderStuff();
+  }
+});
+document.getElementById('borrower-inp').addEventListener('input',()=>{document.getElementById('borrower-inp').classList.remove('err');document.getElementById('borrower-err').classList.remove('show')});
+document.getElementById('detail-close').addEventListener('click',()=>document.getElementById('detail-overlay').classList.remove('open'));
+document.getElementById('detail-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('detail-overlay'))document.getElementById('detail-overlay').classList.remove('open')});
+
+document.getElementById('qr-toggle').addEventListener('click',()=>{
+  const item=load().find(i=>i.id===detailId);if(!item)return;
+  qrOpen=!qrOpen;document.getElementById('qr-toggle-label').textContent=qrOpen?'Hide QR Code':'Show QR Code';
+  document.getElementById('qr-box').classList.toggle('open',qrOpen);
+  if(qrOpen&&!qrInstance){
+    document.getElementById('qr-canvas').innerHTML='';
+    try{
+      qrInstance=new QRCode(document.getElementById('qr-canvas'),{text:qrItemVal(item),width:200,height:200,colorDark:'#E8E8F0',colorLight:'#12121A',correctLevel:QRCode.CorrectLevel.L});
+    }catch(err){
+      console.error('QR generation failed:',err);
+      document.getElementById('qr-canvas').innerHTML=`<div style="padding:20px;text-align:center;color:var(--red);font-size:13px"><strong>⚠ QR could not be generated</strong><div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">${esc(err.message||String(err))}</div></div>`;
+      qrInstance=null;
+    }
+  }
+});
+document.getElementById('qr-download').addEventListener('click',()=>{
+  const item=load().find(i=>i.id===detailId);if(!item||!qrInstance)return;
+  setTimeout(()=>{const canvas=document.querySelector('#qr-canvas canvas');if(!canvas)return;
+    const out=document.createElement('canvas');out.width=canvas.width;out.height=canvas.height+60;
+    const ctx=out.getContext('2d');ctx.fillStyle='#12121A';ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(canvas,0,0);
+    ctx.fillStyle='#E8E8F0';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.fillText(item.name,out.width/2,canvas.height+20);
+    ctx.fillStyle='#6B6B8A';ctx.font='11px sans-serif';ctx.fillText(item.location||item.room||'',out.width/2,canvas.height+38);
+    const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download=`qr-${item.name.replace(/\s+/g,'-').toLowerCase()}.png`;a.click();},100);
+});
+document.getElementById('qr-print').addEventListener('click',()=>{
+  const item=load().find(i=>i.id===detailId);if(!item||!qrInstance)return;
+  setTimeout(()=>{const canvas=document.querySelector('#qr-canvas canvas');if(!canvas)return;
+    document.getElementById('print-area').innerHTML=`<div class="print-qr-item"><img src="${canvas.toDataURL()}" style="width:200px"><p>${item.name}</p><span>${item.location||item.room||''}</span></div>`;window.print();},100);
+});
+document.getElementById('d-edit').addEventListener('click',()=>{document.getElementById('detail-overlay').classList.remove('open');openEdit(detailId)});
+document.getElementById('d-delete').addEventListener('click',()=>{
+  const item=load().find(i=>i.id===detailId);if(!item||!confirm(`Delete "${item.name}"?`))return;
+  save(load().filter(i=>i.id!==detailId));document.getElementById('detail-overlay').classList.remove('open');renderStuff();
+});
+
+// ═══════════════════════════════════════════════
+//  REPORT MODAL
+// ═══════════════════════════════════════════════
+let reportType=null,reportItemId=null;
+function openReport(type,item){
+  reportType=type;reportItemId=item.id;document.getElementById('detail-overlay').classList.remove('open');
+  if(type==='broke'){document.getElementById('report-title').textContent='Oops, Broke It';document.getElementById('report-sub').textContent=`Mark "${item.name}" as broken.`;document.getElementById('report-field-label').textContent='HOW DID IT BREAK? (optional)';document.getElementById('report-confirm').className='btn btn-purple btn-full';document.getElementById('report-confirm').textContent='⚠ Mark as Broken';}
+  else{document.getElementById('report-title').textContent='Used the Last of It';document.getElementById('report-sub').textContent=`Mark "${item.name}" as empty.`;document.getElementById('report-field-label').textContent='ANY DETAILS? (optional)';document.getElementById('report-confirm').className='btn btn-amber btn-full';document.getElementById('report-confirm').textContent='📦 Mark as Empty';}
+  // Show shopping toggle only for "used the last of"
+  const shopToggle=document.getElementById('report-shop-toggle');
+  if(type==='empty'){
+    // Pre-check unless there's already an active shopping card for this item
+    const existing=loadShop().find(s=>s.linkedItemId===item.id&&s.status!=='stocked');
+    document.getElementById('report-add-shop').checked=!existing;
+    shopToggle.style.display='flex';
+    document.querySelector('#report-shop-toggle label').textContent=existing?'🛒 Already on shopping list':'🛒 Add to shopping list';
+    document.getElementById('report-add-shop').disabled=!!existing;
+  } else {
+    shopToggle.style.display='none';
+  }
+  document.getElementById('report-details').value='';document.getElementById('report-overlay').classList.add('open');
+}
+document.getElementById('report-confirm').addEventListener('click',()=>{
+  const items=load();const idx=items.findIndex(i=>i.id===reportItemId);if(idx===-1)return;
+  const detail=document.getElementById('report-details').value.trim();const now=new Date().toISOString();const isBroke=reportType==='broke';
+  items[idx].status=isBroke?'broken':'empty';items[idx].log=[...(items[idx].log||[]),{type:isBroke?'broken':'empty',label:isBroke?'Reported as broken':'Reported: used the last of it',detail:detail||null,at:now}];
+  save(items);
+  // Add to shopping list if toggle is checked (only applies to "used last of")
+  let addedToShop=false;
+  if(!isBroke&&document.getElementById('report-add-shop').checked&&!document.getElementById('report-add-shop').disabled){
+    const item=items[idx];
+    const shop=loadShop();
+    shop.push({id:genId(),name:item.name,qty:1,notes:detail||null,status:'need',linkedItemId:item.id,createdAt:now,log:[]});
+    saveShop(shop);addedToShop=true;
+  }
+  document.getElementById('report-overlay').classList.remove('open');renderStuff();
+  if(addedToShop)setTimeout(()=>showScreen('shop'),250);
+});
+document.getElementById('report-close').addEventListener('click',()=>{document.getElementById('report-overlay').classList.remove('open');setTimeout(()=>detailId&&openDetail(detailId),200)});
+document.getElementById('report-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('report-overlay'))document.getElementById('report-overlay').classList.remove('open')});
+
+// ═══════════════════════════════════════════════
+//  ADD / EDIT FORM
+// ═══════════════════════════════════════════════
+let photoData=null;
+function compressImage(file,maxDim=1280,quality=0.7){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let{width:w,height:h}=img;
+      if(w>maxDim||h>maxDim){
+        if(w>h){h=Math.round(h*(maxDim/w));w=maxDim;}
+        else{w=Math.round(w*(maxDim/h));h=maxDim;}
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      resolve(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Failed to load image'))};
+    img.src=url;
+  });
+}
+document.getElementById('photo-input').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  const label=document.getElementById('ph-label');
+  const origText=label.innerHTML;
+  label.innerHTML='Compressing photo…';label.style.display='flex';
+  document.getElementById('photo-preview').style.display='none';
+  try{
+    photoData=await compressImage(file,1280,0.7);
+    document.getElementById('photo-preview').src=photoData;
+    document.getElementById('photo-preview').style.display='block';
+    label.style.display='none';
+    document.getElementById('photo-remove').style.display='block';
+  }catch(err){
+    alert('Could not process this image: '+(err.message||err));
+    label.innerHTML=origText;
+    photoData=null;
+  }
+});
+document.getElementById('photo-remove').addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();photoData=null;document.getElementById('photo-preview').style.display='none';document.getElementById('ph-label').style.display='flex';document.getElementById('photo-remove').style.display='none';document.getElementById('photo-input').value='';
+});
+
+function resetForm(){
+  editingId=null;photoData=null;
+  document.getElementById('form-title').textContent='ADD ITEM';document.getElementById('save-btn-label').textContent='Add Item';
+  ['f-name','f-desc','f-serial','f-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('photo-preview').style.display='none';document.getElementById('ph-label').style.display='flex';document.getElementById('photo-remove').style.display='none';document.getElementById('photo-input').value='';
+  document.getElementById('f-name-err').style.display='none';document.getElementById('loc-err').classList.remove('show');
+  locReset();
+}
+function openEdit(id){
+  const item=load().find(i=>i.id===id);if(!item)return;
+  editingId=id;document.getElementById('form-title').textContent='EDIT ITEM';document.getElementById('save-btn-label').textContent='Save Changes';
+  document.getElementById('f-name').value=item.name;document.getElementById('f-desc').value=item.desc||'';document.getElementById('f-serial').value=item.serial||'';document.getElementById('f-notes').value=item.notes||'';
+  if(item.photo){photoData=item.photo;document.getElementById('photo-preview').src=item.photo;document.getElementById('photo-preview').style.display='block';document.getElementById('ph-label').style.display='none';document.getElementById('photo-remove').style.display='block';}
+  else{photoData=null;document.getElementById('photo-preview').style.display='none';document.getElementById('ph-label').style.display='flex';document.getElementById('photo-remove').style.display='none';}
+  // Pre-fill location from saved location string
+  locValue=item.location||'';
+  document.getElementById('locac-input').value=locValue;
+  closeLocDropdown();
+  document.getElementById('loc-err').classList.remove('show');
+  showScreen('add');
+}
+document.getElementById('add-back').addEventListener('click',()=>{editingId=null;showScreen('stuff')});
+document.getElementById('save-btn').addEventListener('click',()=>{
+  const name=document.getElementById('f-name').value.trim();
+  document.getElementById('f-name-err').style.display=name?'none':'block';
+  // Read current input value (in case user typed but never picked a row)
+  const locInput=document.getElementById('locac-input').value.trim();
+  if(locInput) locValue=locInput;
+  if(!locValue){document.getElementById('loc-err').classList.add('show');}
+  if(!name||!locValue)return;
+  document.getElementById('loc-err').classList.remove('show');
+  const locPath=locValue;
+  const room=inferRoom(locPath);
+  const items=load();const now=new Date().toISOString();
+  const fields={name,room,location:locPath,desc:document.getElementById('f-desc').value.trim()||null,serial:document.getElementById('f-serial').value.trim()||null,notes:document.getElementById('f-notes').value.trim()||null,photo:photoData||null};
+  let newItem=null;
+  if(editingId){const idx=items.findIndex(i=>i.id===editingId);if(idx!==-1)Object.assign(items[idx],fields);}
+  else{newItem={id:genId(),...fields,status:'home',borrower:null,purpose:null,whereAt:null,addedAt:now,log:[{type:'added',label:'Added to inventory',at:now}]};items.push(newItem);}
+  if(!save(items))return; // Quota exceeded — alert already shown
+  editingId=null;photoData=null;
+  showScreen('stuff');
+  if(newItem)setTimeout(()=>{if(confirm(`"${newItem.name}" added! Open its QR code?`)){openDetail(newItem.id);setTimeout(()=>document.getElementById('qr-toggle').click(),400)}},200);
+});
+
+// ═══════════════════════════════════════════════
+//  MISSING SCREEN
+// ═══════════════════════════════════════════════
+function renderMissing(){
+  const items=load();const out=items.filter(i=>i.status==='out');const broken=items.filter(i=>i.status==='broken'||i.status==='empty');
+  const el=document.getElementById('missing-content');
+  if(!out.length&&!broken.length){el.innerHTML=`<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:52px;height:52px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><p>All good! Everything is home. 🎉</p></div>`;return;}
+  let html='';
+  if(out.length){
+    html+=`<div style="background:color-mix(in srgb,var(--red) 10%,transparent);border:1px solid color-mix(in srgb,var(--red) 30%,transparent);border-radius:14px;padding:14px 16px;margin-bottom:16px"><div style="font-family:var(--font-head);font-size:28px;font-weight:900;color:var(--red)">${out.length}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${out.length===1?'item is':'items are'} not home</div></div>
+    <div class="section-card" style="margin-bottom:24px">${out.map(item=>`<div class="out-row" data-id="${item.id}">
+      ${item.photo?`<img class="out-photo" src="${item.photo}" alt="">`:`<div class="out-photo"><svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" style="width:20px;height:20px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8"/></svg></div>`}
+      <div style="flex:1;min-width:0">
+        <div class="out-name">${esc(item.name)}</div>
+        <div class="out-who">👤 ${esc(item.borrower||'Unknown')}</div>
+        ${item.purpose?`<div class="out-purpose">"${esc(item.purpose)}"</div>`:''}
+        ${item.whereAt?`<div class="out-when">📍 ${esc(item.whereAt)}</div>`:''}
+        <div class="out-when">Taken ${item.checkedOutAt?fmtDate(item.checkedOutAt):'?'} · ${esc(item.location||item.room||'')}</div>
+      </div>
+      <button class="btn btn-green" style="padding:10px 12px;font-size:12px;min-width:auto;flex:none" data-return="${item.id}">✓ Back</button>
+    </div>`).join('')}</div>`;
+  }
+  if(broken.length){
+    html+=`<div style="font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--purple);margin-bottom:10px">NEEDS ATTENTION</div>
+    <div class="section-card">${broken.map(item=>`<div class="out-row" data-id="${item.id}">
+      ${item.photo?`<img class="out-photo" src="${item.photo}" alt="">`:`<div class="out-photo"></div>`}
+      <div style="flex:1"><div class="out-name">${esc(item.name)}</div><div style="font-size:12px;margin-top:2px;color:${item.status==='broken'?'var(--purple)':'var(--amber)'}">${item.status==='broken'?'⚠ Broken':'📦 Needs restocking'}</div><div class="out-when">${esc(item.location||item.room||'')}</div></div>
+      <button class="btn btn-green" style="padding:10px 12px;font-size:12px;min-width:auto;flex:none" data-fix="${item.id}">✓ Fixed</button>
+    </div>`).join('')}</div>`;
+  }
+  el.innerHTML=html;
+  el.querySelectorAll('.out-row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('[data-return],[data-fix]'))return;openDetail(row.dataset.id)}));
+  el.querySelectorAll('[data-return]').forEach(btn=>btn.addEventListener('click',e=>{
+    e.stopPropagation();const items=load();const idx=items.findIndex(i=>i.id===btn.dataset.return);if(idx===-1)return;
+    const now=new Date().toISOString();items[idx]={...items[idx],status:'home',borrower:null,purpose:null,whereAt:null,checkedOutAt:null,log:[...(items[idx].log||[]),{type:'returned',label:'Returned home',at:now}]};
+    save(items);renderMissing();renderStuff();
+  }));
+  el.querySelectorAll('[data-fix]').forEach(btn=>btn.addEventListener('click',e=>{
+    e.stopPropagation();const items=load();const idx=items.findIndex(i=>i.id===btn.dataset.fix);if(idx===-1)return;
+    const now=new Date().toISOString();items[idx]={...items[idx],status:'home',log:[...(items[idx].log||[]),{type:'returned',label:'Marked as fixed / restocked',at:now}]};
+    save(items);renderMissing();renderStuff();
+  }));
+}
+
+// ═══════════════════════════════════════════════
+//  LOCATIONS (Container + Slot model)
+// ═══════════════════════════════════════════════
+// One-time wipe of old-format locations on first load of this version
+(function migrateLocs(){
+  const VERSION_KEY='mystuff_loc_schema_v';
+  if(localStorage.getItem(VERSION_KEY)!=='2'){
+    // Wipe old data (3-step zone/slot model is gone)
+    localStorage.setItem(LOCS_KEY,'[]');
+    localStorage.setItem(VERSION_KEY,'2');
+  }
+})();
+
+const CONTAINER_TYPES=[
+  {id:'toolbox', label:'Toolbox',  emoji:'🧰', short:'TB'},
+  {id:'shelf',   label:'Shelf',    emoji:'📚', short:'SH'},
+  {id:'cabinet', label:'Cabinet',  emoji:'🗄️', short:'CB'},
+  {id:'drawer',  label:'Drawer',   emoji:'🗃️', short:'DR'},
+  {id:'bin',     label:'Bin',      emoji:'🪣', short:'BN'},
+  {id:'box',     label:'Box',      emoji:'📦', short:'BX'},
+  {id:'rack',    label:'Rack',     emoji:'🪜', short:'RK'},
+  {id:'hook',    label:'Hook/Peg', emoji:'🪝', short:'HK'},
+  {id:'wall',    label:'Wall',     emoji:'🧱', short:'WL'},
+  {id:'floor',   label:'Floor',    emoji:'🟫', short:'FL'},
+  {id:'other',   label:'Other',    emoji:'📍', short:'OT'},
+];
+const CONTAINER_TYPE_MAP=Object.fromEntries(CONTAINER_TYPES.map(t=>[t.id,t]));
+const LOC_ROOMS_QR=ROOMS.map(r=>({name:r,icon:ROOM_ICONS[r]||'📦',short:r.substring(0,2).toUpperCase().replace(/\s/,'')}));
+const ROOM_SHORT_MAP=Object.fromEntries(LOC_ROOMS_QR.map(r=>[r.name,r.short]));
+
+// View state: which room/container we're drilled into
+let locView={room:null,containerId:null};
+
+function shortFromName(name,len=4){
+  // Take first letters of each word; fallback to first N chars
+  const words=name.toUpperCase().replace(/[^A-Z0-9 ]/g,'').split(/\s+/).filter(Boolean);
+  let s=words.length>=2?words.map(w=>w[0]).join('').slice(0,len):(words[0]||'X').slice(0,len);
+  return s||'X';
+}
+function uniqueCode(prefix,existingCodes){
+  if(!existingCodes.includes(prefix))return prefix;
+  let i=2;while(existingCodes.includes(`${prefix}${i}`))i++;
+  return `${prefix}${i}`;
+}
+
+function renderLocations(){
+  const el=document.getElementById('loc-content');
+  const locs=loadLocs();
+  // Top breadcrumb
+  const crumb=`<div class="loc-breadcrumb">
+    <span class="crumb ${!locView.room?'active':''}" data-nav="root">All Rooms</span>
+    ${locView.room?`<span class="crumb-sep">›</span><span class="crumb ${locView.room&&!locView.containerId?'active':''}" data-nav="room">${esc(locView.room)}</span>`:''}
+    ${locView.containerId?(()=>{const c=locs.find(l=>l.id===locView.containerId);return c?`<span class="crumb-sep">›</span><span class="crumb active" data-nav="container">${esc(c.containerName)}</span>`:'';})():''}
+  </div>`;
+
+  let body='';
+  if(!locView.room){
+    // Show room tiles
+    body=`<div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">PICK A ROOM</div>`+
+      LOC_ROOMS_QR.map(r=>{
+        const count=locs.filter(l=>l.room===r.name&&l.type==='container').length;
+        return `<div class="loc-card" data-room="${esc(r.name)}"><span class="lc-icon">${r.icon}</span><div><div class="lc-name">${esc(r.name)}</div><div class="lc-sub">${count} container${count===1?'':'s'}</div></div><svg class="lc-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:20px;height:20px"><polyline points="9 18 15 12 9 6"/></svg></div>`;
+      }).join('');
+  } else if(!locView.containerId){
+    // Show containers in this room
+    const containers=locs.filter(l=>l.room===locView.room&&l.type==='container');
+    body=`<div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">CONTAINERS IN ${esc(locView.room).toUpperCase()}</div>`;
+    if(!containers.length){
+      body+=`<div style="font-size:12px;color:var(--muted);text-align:center;padding:14px;background:var(--panel);border:1px dashed var(--border);border-radius:10px;margin-bottom:12px">No containers yet. Add one below.</div>`;
+    }
+    body+=`<div class="cnt-grid">`+
+      containers.map(c=>{
+        const t=CONTAINER_TYPE_MAP[c.containerType]||CONTAINER_TYPE_MAP.other;
+        const slotCount=locs.filter(l=>l.type==='slot'&&l.parentId===c.id).length;
+        return `<div class="cnt-tile" data-open="${c.id}">
+          <div class="cnt-tile-top"><span class="cnt-tile-icon">${t.emoji}</span><span class="cnt-tile-type">${t.label.toUpperCase()}</span></div>
+          <div class="cnt-tile-name">${esc(c.containerName)}</div>
+          <div class="cnt-tile-meta"><span class="cnt-tile-code">${esc(c.code)}</span><span>${slotCount} slot${slotCount===1?'':'s'}</span></div>
+          <div class="loc-tile-actions" style="position:absolute;top:6px;right:6px">
+            <button class="qr" data-qr="${c.id}" aria-label="QR">QR</button>
+            <button class="del" data-del="${c.id}" aria-label="Delete">✕</button>
+          </div>
+        </div>`;
+      }).join('')+
+      `<div class="cnt-tile add" id="add-container-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span style="font-size:12px;font-weight:700">Add Container</span></div>`+
+      `</div>`;
+  } else {
+    // Show slots inside a container
+    const container=locs.find(l=>l.id===locView.containerId);
+    if(!container){locView.containerId=null;renderLocations();return;}
+    const slots=locs.filter(l=>l.type==='slot'&&l.parentId===container.id);
+    const t=CONTAINER_TYPE_MAP[container.containerType]||CONTAINER_TYPE_MAP.other;
+    body=`<div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:10px">SLOTS IN ${esc(container.containerName).toUpperCase()}</div>`;
+    body+=`<div class="cnt-tile" style="margin-bottom:14px;cursor:default">
+        <div class="cnt-tile-top"><span class="cnt-tile-icon">${t.emoji}</span><span class="cnt-tile-type">${t.label.toUpperCase()}</span></div>
+        <div class="cnt-tile-name">${esc(container.containerName)}</div>
+        <div class="cnt-tile-meta"><span class="cnt-tile-code">${esc(container.code)}</span><button class="icon-btn blue" data-qr="${container.id}" style="padding:4px 10px;font-size:10px">View QR</button></div>
+      </div>`;
+    if(!slots.length){
+      body+=`<div style="font-size:12px;color:var(--muted);text-align:center;padding:14px;background:var(--panel);border:1px dashed var(--border);border-radius:10px;margin-bottom:12px">No slots yet. Items can be assigned directly to <strong style="color:var(--text)">${esc(container.containerName)}</strong>, or add slots below.</div>`;
+    }
+    body+=`<div class="cnt-grid">`+
+      slots.map(s=>`<div class="cnt-tile" style="min-height:70px">
+        <div class="cnt-tile-name">${esc(s.slotName)}</div>
+        <div class="cnt-tile-meta"><span class="cnt-tile-code">${esc(s.code)}</span></div>
+        <div class="loc-tile-actions" style="position:absolute;top:6px;right:6px">
+          <button class="qr" data-qr="${s.id}" aria-label="QR">QR</button>
+          <button class="del" data-del="${s.id}" aria-label="Delete">✕</button>
+        </div>
+      </div>`).join('')+
+      `<div class="cnt-tile add" id="add-slot-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span style="font-size:12px;font-weight:700">Add Slot</span></div>`+
+      `</div>`;
+  }
+
+  el.innerHTML=crumb+body;
+
+  // Wire breadcrumb
+  el.querySelectorAll('[data-nav]').forEach(c=>c.addEventListener('click',()=>{
+    if(c.dataset.nav==='root'){locView={room:null,containerId:null};}
+    else if(c.dataset.nav==='room'){locView.containerId=null;}
+    renderLocations();
+  }));
+  // Wire room cards
+  el.querySelectorAll('[data-room]').forEach(c=>c.addEventListener('click',()=>{locView.room=c.dataset.room;renderLocations()}));
+  // Wire container tiles (drill in)
+  el.querySelectorAll('[data-open]').forEach(c=>c.addEventListener('click',e=>{
+    if(e.target.closest('.loc-tile-actions'))return;
+    locView.containerId=c.dataset.open;renderLocations();
+  }));
+  // Wire QR buttons
+  el.querySelectorAll('[data-qr]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const loc=loadLocs().find(l=>l.id===b.dataset.qr);if(loc)openLocQr(loc);
+  }));
+  // Wire delete buttons
+  el.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const id=b.dataset.del;const all=loadLocs();const target=all.find(l=>l.id===id);if(!target)return;
+    const childCount=all.filter(l=>l.parentId===id).length;
+    const msg=target.type==='container'&&childCount>0
+      ?`Delete "${target.containerName}" and its ${childCount} slot${childCount===1?'':'s'}?`
+      :`Delete "${target.type==='container'?target.containerName:target.slotName}"?`;
+    if(!confirm(msg))return;
+    // Delete this + any children
+    saveLocs(all.filter(l=>l.id!==id&&l.parentId!==id));
+    renderLocations();
+  }));
+  // Wire add buttons
+  const addC=document.getElementById('add-container-btn');
+  if(addC)addC.addEventListener('click',()=>openAddContainer());
+  const addS=document.getElementById('add-slot-btn');
+  if(addS)addS.addEventListener('click',()=>openAddSlot());
+}
+
+// ── Add Container modal ──
+let addContainerType='toolbox';
+function openAddContainer(){
+  if(!locView.room)return;
+  document.getElementById('ac-room-label').textContent=locView.room;
+  document.getElementById('ac-name').value='';
+  document.getElementById('ac-name-err').style.display='none';
+  addContainerType='toolbox';
+  document.getElementById('ac-types').innerHTML=CONTAINER_TYPES.map(t=>
+    `<button class="type-btn ${t.id===addContainerType?'selected':''}" data-type="${t.id}"><span class="ti-emoji">${t.emoji}</span><span>${t.label}</span></button>`
+  ).join('');
+  document.getElementById('ac-types').querySelectorAll('.type-btn').forEach(b=>b.addEventListener('click',()=>{
+    addContainerType=b.dataset.type;
+    document.getElementById('ac-types').querySelectorAll('.type-btn').forEach(x=>x.classList.toggle('selected',x.dataset.type===addContainerType));
+  }));
+  document.getElementById('add-container-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('ac-name').focus(),100);
+}
+document.getElementById('ac-close').addEventListener('click',()=>document.getElementById('add-container-overlay').classList.remove('open'));
+document.getElementById('add-container-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('add-container-overlay'))document.getElementById('add-container-overlay').classList.remove('open')});
+document.getElementById('ac-save').addEventListener('click',()=>{
+  const name=document.getElementById('ac-name').value.trim();
+  if(!name){document.getElementById('ac-name-err').style.display='block';return;}
+  const all=loadLocs();
+  const t=CONTAINER_TYPE_MAP[addContainerType];
+  const roomShort=ROOM_SHORT_MAP[locView.room]||'XX';
+  const prefix=`${roomShort}-${t.short}${shortFromName(name,4)}`;
+  const existingCodes=all.map(l=>l.code);
+  const code=uniqueCode(prefix,existingCodes);
+  const loc={
+    id:genId(),type:'container',room:locView.room,
+    containerName:name,containerType:addContainerType,
+    code,fullName:`${locView.room} · ${name}`,
+    createdAt:new Date().toISOString()
+  };
+  all.push(loc);saveLocs(all);
+  document.getElementById('add-container-overlay').classList.remove('open');
+  // Drop straight into the new container so user can add slots
+  locView.containerId=loc.id;
+  renderLocations();
+  setTimeout(()=>openLocQr(loc),300);
+});
+
+// ── Add Slot modal ──
+function openAddSlot(){
+  if(!locView.containerId)return;
+  const container=loadLocs().find(l=>l.id===locView.containerId);if(!container)return;
+  document.getElementById('as-cnt-label').textContent=container.fullName;
+  document.getElementById('as-name').value='';
+  document.getElementById('as-name-err').style.display='none';
+  document.getElementById('add-slot-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('as-name').focus(),100);
+}
+document.getElementById('as-close').addEventListener('click',()=>document.getElementById('add-slot-overlay').classList.remove('open'));
+document.getElementById('add-slot-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('add-slot-overlay'))document.getElementById('add-slot-overlay').classList.remove('open')});
+document.getElementById('as-save').addEventListener('click',()=>{
+  const name=document.getElementById('as-name').value.trim();
+  if(!name){document.getElementById('as-name-err').style.display='block';return;}
+  const all=loadLocs();
+  const container=all.find(l=>l.id===locView.containerId);if(!container)return;
+  const prefix=`${container.code}-${shortFromName(name,3)}`;
+  const existingCodes=all.map(l=>l.code);
+  const code=uniqueCode(prefix,existingCodes);
+  const loc={
+    id:genId(),type:'slot',room:container.room,
+    parentId:container.id,
+    containerName:container.containerName,containerType:container.containerType,
+    slotName:name,
+    code,fullName:`${container.fullName} · ${name}`,
+    createdAt:new Date().toISOString()
+  };
+  all.push(loc);saveLocs(all);
+  document.getElementById('add-slot-overlay').classList.remove('open');
+  renderLocations();
+  setTimeout(()=>openLocQr(loc),300);
+});
+
+function openLocQr(loc){
+  // Open modal FIRST so user sees something even if QR fails
+  document.getElementById('lq-title').textContent=loc.fullName;
+  document.getElementById('lq-code-display').innerHTML=`<div style="font-family:var(--font-head);font-size:28px;font-weight:900;color:var(--blue);letter-spacing:4px">${esc(loc.code)}</div><div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(loc.fullName)}</div>`;
+  const canvas=document.getElementById('lq-canvas');canvas.innerHTML='';
+  const qrEl=document.createElement('div');canvas.appendChild(qrEl);
+  document.getElementById('loc-qr-overlay').classList.add('open');
+  if(typeof QRCode==='undefined'){
+    canvas.innerHTML=`<div style="padding:20px;text-align:center;color:var(--red);font-size:13px;background:color-mix(in srgb,var(--red) 10%,transparent);border:1px solid var(--red);border-radius:10px"><strong>⚠ QR library didn't load</strong><div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Your browser blocked the QR code library. The location is still saved.</div><div style="font-size:11px;color:var(--muted);margin-top:6px">Code: <strong style="color:var(--text)">${esc(loc.code)}</strong></div></div>`;
+    return;
+  }
+  try{
+    new QRCode(qrEl,{text:qrLocVal(loc),width:200,height:200,colorDark:'#E8E8F0',colorLight:'#12121A',correctLevel:QRCode.CorrectLevel.L});
+  }catch(err){
+    console.error('QR generation failed:',err);
+    canvas.innerHTML=`<div style="padding:20px;text-align:center;color:var(--red);font-size:13px;background:color-mix(in srgb,var(--red) 10%,transparent);border:1px solid var(--red);border-radius:10px"><strong>⚠ QR could not be generated</strong><div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">${esc(err.message||String(err))}</div><div style="font-size:11px;color:var(--muted);margin-top:6px">Location is still saved. Code: ${esc(loc.code)}</div></div>`;
+  }
+  document.getElementById('lq-download').onclick=()=>setTimeout(()=>{
+    const c=qrEl.querySelector('canvas');if(!c)return;
+    const out=document.createElement('canvas');out.width=c.width;out.height=c.height+70;
+    const ctx=out.getContext('2d');ctx.fillStyle='#12121A';ctx.fillRect(0,0,out.width,out.height);ctx.drawImage(c,0,0);
+    ctx.fillStyle='#4D9FFF';ctx.font='bold 22px sans-serif';ctx.textAlign='center';ctx.fillText(loc.code,out.width/2,c.height+28);
+    ctx.fillStyle='#6B6B8A';ctx.font='12px sans-serif';ctx.fillText(loc.fullName,out.width/2,c.height+48);
+    const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download=`location-${loc.code}.png`;a.click();
+  },150);
+  document.getElementById('lq-print').onclick=()=>setTimeout(()=>{
+    const c=qrEl.querySelector('canvas');if(!c)return;
+    document.getElementById('print-area').innerHTML=`<div class="print-qr-item"><img src="${c.toDataURL()}" style="width:200px"><p>${loc.code}</p><span>${loc.fullName}</span></div>`;window.print();
+  },150);
+}
+document.getElementById('lq-close').addEventListener('click',()=>document.getElementById('loc-qr-overlay').classList.remove('open'));
+document.getElementById('loc-qr-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('loc-qr-overlay'))document.getElementById('loc-qr-overlay').classList.remove('open')});
+
+// ═══════════════════════════════════════════════
+//  SCANNER
+// ═══════════════════════════════════════════════
+let stream=null,scanActive=false,scanInterval=null,barcodeDetector=null;
+async function initScanner(){
+  const video=document.getElementById('scanner-video');const wrap=document.getElementById('scanner-wrap');const permBox=document.getElementById('cam-perm-box');
+  if(stream){scanActive=true;return}
+  if('BarcodeDetector' in window)barcodeDetector=new BarcodeDetector({formats:['qr_code']});
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});video.srcObject=stream;wrap.style.display='block';permBox.style.display='none';scanActive=true;startScanLoop();}
+  catch{wrap.style.display='none';permBox.style.display='flex'}
+}
+document.getElementById('req-cam-btn').addEventListener('click',initScanner);
+function startScanLoop(){
+  if(scanInterval)clearInterval(scanInterval);
+  scanInterval=setInterval(async()=>{
+    if(!scanActive||!stream||!barcodeDetector)return;const video=document.getElementById('scanner-video');if(video.readyState<2)return;
+    try{const codes=await barcodeDetector.detect(video);if(codes.length){scanActive=false;if(navigator.vibrate)navigator.vibrate(80);handleScanned(codes[0].rawValue)}}catch{}
+  },300);
+}
+function stopScanner(){scanActive=false;if(scanInterval){clearInterval(scanInterval);scanInterval=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+
+function handleScanned(val){
+  const items=load();const locs=loadLocs();
+  // New compact format: mystuff:item:ID or mystuff:loc:CODE
+  const m=val.trim().match(/^mystuff:(item|loc):(.+)$/i);
+  if(m){
+    if(m[1].toLowerCase()==='item'){
+      const item=items.find(i=>i.id===m[2]);
+      if(item){openScanResult(item);return;}
+    } else {
+      const code=m[2];const loc=locs.find(l=>l.code===code);
+      openLocScanResult(code,loc?loc.fullName:code,loc,items);return;
+    }
+  }
+  // Legacy JSON format (any QRs printed before)
+  try{const p=JSON.parse(val);
+    if(p.type==='location'){const loc=locs.find(l=>l.code===p.code);openLocScanResult(p.code,p.name,loc,items);return;}
+    if(p.type==='item'){const item=items.find(i=>i.id===p.id);if(item){openScanResult(item);return;}}
+  }catch{}
+  // Fallback: try matching by item name
+  const v=val.trim().toLowerCase();const item=items.find(i=>i.name.toLowerCase()===v);
+  if(item){openScanResult(item);return;}
+  document.getElementById('not-found-text').textContent=`No item found for "${val}"`;document.getElementById('not-found-bar').style.display='flex';setTimeout(()=>{scanActive=true},2000);
+}
+document.getElementById('manual-btn').addEventListener('click',()=>{const v=document.getElementById('manual-inp').value.trim();if(!v)return;document.getElementById('manual-inp').value='';handleScanned(v)});
+document.getElementById('manual-inp').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('manual-btn').click()});
+document.getElementById('nf-close').addEventListener('click',()=>{document.getElementById('not-found-bar').style.display='none';scanActive=true});
+
+function openLocScanResult(code,name,loc,items){
+  document.getElementById('ls-name').textContent=loc?loc.fullName:name;document.getElementById('ls-code').textContent=code;
+  // Match items by exact location string OR (for containers) any item whose location starts with this container's name
+  let matching=[];
+  if(loc){
+    const target=loc.fullName.toLowerCase();
+    matching=items.filter(i=>{
+      const itemLoc=(i.location||'').toLowerCase();
+      // Exact match, OR the item is in a deeper slot under this container
+      return itemLoc===target||itemLoc.startsWith(target+' · ');
+    });
+  } else {
+    // No saved location, fall back to room match
+    matching=items.filter(i=>i.room===name);
+  }
+  const lsItems=document.getElementById('ls-items');
+  if(!matching.length){lsItems.innerHTML=`<div style="color:var(--muted);font-size:14px;padding:16px 0">No items assigned to this location yet.</div>`;}
+  else{lsItems.innerHTML=matching.map(item=>{const st=statusLabel(item);return`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">${item.photo?`<img style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0" src="${item.photo}" alt="">`:`<div style="width:40px;height:40px;border-radius:8px;background:var(--panel);flex-shrink:0"></div>`}<div style="flex:1"><div style="font-family:var(--font-head);font-size:14px;font-weight:700">${esc(item.name)}</div><div style="font-size:11px;color:var(--muted)">${esc(item.location||item.room||'')}</div></div><span class="status-chip ${st.cls}">${st.label}</span></div>`;}).join('');}
+  document.getElementById('loc-scan-overlay').classList.add('open');
+}
+document.getElementById('ls-close').addEventListener('click',()=>{document.getElementById('loc-scan-overlay').classList.remove('open');setTimeout(()=>{scanActive=true},500)});
+document.getElementById('loc-scan-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('loc-scan-overlay')){document.getElementById('loc-scan-overlay').classList.remove('open');setTimeout(()=>{scanActive=true},500)}});
+
+let scanItemId=null;
+function openScanResult(item){
+  scanItemId=item.id;const isOut=item.status==='out';const st=statusLabel(item);
+  document.getElementById('sr-name').textContent=item.name;
+  const pw=document.getElementById('sr-photo-wrap');if(item.photo){pw.style.display='block';document.getElementById('sr-photo').src=item.photo}else pw.style.display='none';
+  document.getElementById('sr-status').innerHTML=`<span class="badge badge-${st.badgeCls}">${st.label}</span>`;
+  document.getElementById('sr-rows').innerHTML=[
+    ['LOCATION',item.location||item.room||'—'],
+    item.desc?['DESCRIPTION',item.desc]:null,
+    isOut&&item.borrower?['BORROWED BY',item.borrower]:null,
+    isOut&&item.purpose?['FOR',item.purpose]:null,
+    isOut&&item.whereAt?['TAKEN TO',item.whereAt]:null,
+    isOut&&item.checkedOutAt?['SINCE',fmtDate(item.checkedOutAt)]:null,
+  ].filter(Boolean).map(([l,v])=>`<div class="detail-row"><span class="dl">${l}</span><span class="dv">${esc(v)}</span></div>`).join('');
+  const actEl=document.getElementById('sr-actions');
+  if(isOut){
+    actEl.innerHTML=`<button class="btn btn-green btn-full" id="sr-return"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>Mark as Returned</button>`;
+    document.getElementById('sr-return').addEventListener('click',()=>{
+      const items=load();const idx=items.findIndex(i=>i.id===scanItemId);if(idx===-1)return;const now=new Date().toISOString();
+      items[idx]={...items[idx],status:'home',borrower:null,purpose:null,whereAt:null,checkedOutAt:null,log:[...(items[idx].log||[]),{type:'returned',label:'Returned home',at:now}]};
+      save(items);document.getElementById('scan-overlay').classList.remove('open');renderStuff();
+    });
+  } else {
+    actEl.innerHTML=`
+      <div style="margin-bottom:6px"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:5px">WHO'S TAKING IT? <span style="color:var(--red)">*</span></div><input type="text" id="sr-borrower" placeholder="Enter their name" class="co-input" style="width:100%;margin-bottom:4px"><div id="sr-borrower-err" style="font-size:11px;color:var(--red);display:none">A name is required</div></div>
+      <div style="margin-bottom:6px"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:5px">WHAT FOR?</div><input type="text" id="sr-purpose" placeholder="e.g. fixing the sink" class="co-input" style="width:100%"></div>
+      <div style="margin-bottom:10px"><div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:5px">TAKING IT WHERE?</div><input type="text" id="sr-where" placeholder="e.g. bathroom, outside" class="co-input" style="width:100%"></div>
+      <button class="btn btn-amber btn-full" id="sr-checkout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Check Out</button>`;
+    document.getElementById('sr-borrower').addEventListener('input',()=>{document.getElementById('sr-borrower').classList.remove('err');document.getElementById('sr-borrower-err').style.display='none'});
+    document.getElementById('sr-checkout').addEventListener('click',()=>{
+      const who=document.getElementById('sr-borrower').value.trim();
+      if(!who){document.getElementById('sr-borrower').classList.add('err');document.getElementById('sr-borrower-err').style.display='block';document.getElementById('sr-borrower').focus();return;}
+      const purpose=document.getElementById('sr-purpose').value.trim();const where=document.getElementById('sr-where').value.trim();
+      const items=load();const idx=items.findIndex(i=>i.id===scanItemId);if(idx===-1)return;const now=new Date().toISOString();
+      items[idx]={...items[idx],status:'out',borrower:who,purpose:purpose||null,whereAt:where||null,checkedOutAt:now,log:[...(items[idx].log||[]),{type:'out',label:`Taken by ${who}`,detail:[purpose&&`For: ${purpose}`,where&&`Going to: ${where}`].filter(Boolean).join(' · ')||null,at:now}]};
+      save(items);document.getElementById('scan-overlay').classList.remove('open');renderStuff();
+    });
+  }
+  document.getElementById('scan-overlay').classList.add('open');
+}
+document.getElementById('scan-close').addEventListener('click',resetScan);document.getElementById('scan-again-btn').addEventListener('click',resetScan);document.getElementById('scan-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('scan-overlay'))resetScan()});
+function resetScan(){document.getElementById('scan-overlay').classList.remove('open');scanItemId=null;setTimeout(()=>{scanActive=true},500)}
+
+// ═══════════════════════════════════════════════
+//  SHOPPING (KANBAN BOARD)
+// ═══════════════════════════════════════════════
+const SHOP_KEY='mystuff_shopping_v1';
+function loadShop(){try{return JSON.parse(localStorage.getItem(SHOP_KEY)||'[]')}catch{return[]}}
+function saveShop(s){localStorage.setItem(SHOP_KEY,JSON.stringify(s))}
+
+const SHOP_COLUMNS=[
+  {key:'need',    label:'NEED TO BUY', icon:'🛒'},
+  {key:'ordered', label:'ORDERED',     icon:'📦'},
+  {key:'arrived', label:'ARRIVED',     icon:'📬'},
+  {key:'stocked', label:'STOCKED',     icon:'✓'},
+];
+const SHOP_NEXT={need:'ordered',ordered:'arrived',arrived:'stocked',stocked:null};
+const SHOP_PREV={need:null,ordered:'need',arrived:'ordered',stocked:'arrived'};
+const SHOP_BADGE={need:'amber',ordered:'blue',arrived:'purple',stocked:'green'};
+
+function renderShop(){
+  const shop=loadShop();
+  const items=load();
+  const el=document.getElementById('shop-content');
+  const counts={};SHOP_COLUMNS.forEach(c=>counts[c.key]=shop.filter(s=>s.status===c.key).length);
+
+  let html=`<div class="kb-summary">${SHOP_COLUMNS.map(c=>`<div class="kb-stat ${c.key}"><div class="kb-stat-num">${counts[c.key]}</div><div class="kb-stat-lbl">${c.label}</div></div>`).join('')}</div>`;
+
+  SHOP_COLUMNS.forEach(col=>{
+    const cards=shop.filter(s=>s.status===col.key);
+    html+=`<div class="kb-col ${col.key}"><div class="kb-col-hdr"><div class="kb-col-title"><span class="kb-dot"></span>${col.icon} ${col.label}</div><span class="kb-col-count">${cards.length}</span></div>`;
+    if(!cards.length){
+      const emptyMsg=col.key==='need'?'Nothing on the list. Nice.':col.key==='ordered'?'Nothing ordered.':col.key==='arrived'?'Nothing waiting to be put away.':'Nothing stocked yet.';
+      html+=`<div class="kb-empty">${emptyMsg}</div>`;
+    } else {
+      html+=cards.map(card=>{
+        const linkedItem=card.linkedItemId?items.find(i=>i.id===card.linkedItemId):null;
+        return`<div class="kb-card" data-id="${card.id}"><div class="kb-card-top"><div class="kb-card-name">${esc(card.name)}</div>${card.qty&&card.qty>1?`<span class="kb-card-qty">×${card.qty}</span>`:''}</div>${card.notes?`<div class="kb-card-notes">${esc(card.notes)}</div>`:''}${linkedItem?`<div class="kb-card-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Linked: ${esc(linkedItem.name)}</div>`:''}</div>`;
+      }).join('');
+    }
+    html+=`</div>`;
+  });
+  el.innerHTML=html;
+  el.querySelectorAll('.kb-card').forEach(c=>c.addEventListener('click',()=>openShopCard(c.dataset.id)));
+}
+
+let shopCardId=null;
+function openShopCard(id){
+  const shop=loadShop();const card=shop.find(s=>s.id===id);if(!card)return;
+  shopCardId=id;
+  const items=load();
+  const linkedItem=card.linkedItemId?items.find(i=>i.id===card.linkedItemId):null;
+  const col=SHOP_COLUMNS.find(c=>c.key===card.status);
+
+  document.getElementById('sc-name').textContent=card.name;
+  document.getElementById('sc-status').innerHTML=`<span class="badge badge-${SHOP_BADGE[col.key]}">${col.icon} ${col.label}</span>`;
+  document.getElementById('sc-rows').innerHTML=[
+    card.qty&&card.qty>1?['QUANTITY','×'+card.qty]:null,
+    card.notes?['NOTES',card.notes]:null,
+    linkedItem?['LINKED ITEM',linkedItem.name]:null,
+    ['ADDED',fmtDate(card.createdAt)],
+  ].filter(Boolean).map(([l,v])=>`<div class="detail-row"><span class="dl">${l}</span><span class="dv">${esc(v)}</span></div>`).join('');
+
+  const moves=[];
+  if(SHOP_PREV[card.status]){const p=SHOP_COLUMNS.find(c=>c.key===SHOP_PREV[card.status]);moves.push({to:p.key,label:`← ${p.label}`,cls:'btn-ghost'});}
+  if(SHOP_NEXT[card.status]){const n=SHOP_COLUMNS.find(c=>c.key===SHOP_NEXT[card.status]);moves.push({to:n.key,label:`${n.label} →`,cls:'btn-amber'});}
+  document.getElementById('sc-moves').innerHTML=moves.length?moves.map(m=>`<button class="btn ${m.cls}" data-to="${m.to}" style="font-size:12px;min-width:0">${m.label}</button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center;padding:8px">Already at final step.</div>`;
+  document.getElementById('sc-moves').querySelectorAll('[data-to]').forEach(b=>b.addEventListener('click',()=>moveShopCard(id,b.dataset.to)));
+
+  document.getElementById('shop-overlay').classList.add('open');
+}
+
+function moveShopCard(id,toStatus){
+  const shop=loadShop();const idx=shop.findIndex(s=>s.id===id);if(idx===-1)return;
+  const card=shop[idx];const now=new Date().toISOString();
+  shop[idx]={...card,status:toStatus,log:[...(card.log||[]),{from:card.status,to:toStatus,at:now}]};
+  saveShop(shop);
+  // When moving to "stocked" and linked to an empty item, offer to restore it to "home"
+  if(toStatus==='stocked'&&card.linkedItemId){
+    const items=load();const itemIdx=items.findIndex(i=>i.id===card.linkedItemId);
+    if(itemIdx!==-1&&items[itemIdx].status==='empty'){
+      document.getElementById('shop-overlay').classList.remove('open');
+      setTimeout(()=>{
+        if(confirm(`Mark "${items[itemIdx].name}" as back in stock?`)){
+          items[itemIdx]={...items[itemIdx],status:'home',log:[...(items[itemIdx].log||[]),{type:'returned',label:'Restocked from shopping list',at:now}]};
+          save(items);renderStuff();
+        }
+        renderShop();
+      },200);
+      return;
+    }
+  }
+  document.getElementById('shop-overlay').classList.remove('open');renderShop();
+}
+
+document.getElementById('shop-close').addEventListener('click',()=>document.getElementById('shop-overlay').classList.remove('open'));
+document.getElementById('shop-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('shop-overlay'))document.getElementById('shop-overlay').classList.remove('open')});
+document.getElementById('sc-delete').addEventListener('click',()=>{
+  const card=loadShop().find(s=>s.id===shopCardId);if(!card||!confirm(`Delete shopping card for "${card.name}"?`))return;
+  saveShop(loadShop().filter(s=>s.id!==shopCardId));
+  document.getElementById('shop-overlay').classList.remove('open');renderShop();
+});
+document.getElementById('sc-edit').addEventListener('click',()=>{
+  const card=loadShop().find(s=>s.id===shopCardId);if(!card)return;
+  document.getElementById('shop-overlay').classList.remove('open');
+  openShopEdit(card);
+});
+
+// Add/Edit shopping item
+let shopEditId=null,shopEditLinkedId=null;
+function openShopEdit(card){
+  shopEditId=card?card.id:null;
+  shopEditLinkedId=card?card.linkedItemId:null;
+  document.getElementById('se-title').textContent=card?'Edit Shopping Item':'Add to Shopping List';
+  document.getElementById('se-save-label').textContent=card?'Save Changes':'Add to List';
+  document.getElementById('se-name').value=card?card.name:'';
+  document.getElementById('se-qty').value=card?(card.qty||1):1;
+  document.getElementById('se-notes').value=card?(card.notes||''):'';
+  document.getElementById('se-name-err').style.display='none';
+  document.getElementById('shop-edit-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('se-name').focus(),100);
+}
+document.getElementById('se-close').addEventListener('click',()=>document.getElementById('shop-edit-overlay').classList.remove('open'));
+document.getElementById('shop-edit-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('shop-edit-overlay'))document.getElementById('shop-edit-overlay').classList.remove('open')});
+document.getElementById('se-save').addEventListener('click',()=>{
+  const name=document.getElementById('se-name').value.trim();
+  if(!name){document.getElementById('se-name-err').style.display='block';document.getElementById('se-name').focus();return;}
+  const qty=Math.max(1,parseInt(document.getElementById('se-qty').value)||1);
+  const notes=document.getElementById('se-notes').value.trim()||null;
+  const shop=loadShop();const now=new Date().toISOString();
+  if(shopEditId){
+    const idx=shop.findIndex(s=>s.id===shopEditId);
+    if(idx!==-1)shop[idx]={...shop[idx],name,qty,notes};
+  } else {
+    shop.push({id:genId(),name,qty,notes,status:'need',linkedItemId:shopEditLinkedId,createdAt:now,log:[]});
+  }
+  saveShop(shop);
+  document.getElementById('shop-edit-overlay').classList.remove('open');
+  shopEditId=null;shopEditLinkedId=null;renderShop();
+});
+document.getElementById('shop-add-fab').addEventListener('click',()=>openShopEdit(null));
+
+// ═══════════════════════════════════════════════
+//  CSV UTILITIES
+// ═══════════════════════════════════════════════
+function csvEscape(v){
+  if(v==null)return'';
+  const s=String(v);
+  if(/[",\r\n]/.test(s))return'"'+s.replace(/"/g,'""')+'"';
+  return s;
+}
+function csvStringify(rows,headers){
+  const out=[headers.map(csvEscape).join(',')];
+  rows.forEach(r=>out.push(headers.map(h=>csvEscape(r[h])).join(',')));
+  return out.join('\r\n');
+}
+// Robust CSV parser: handles quoted fields, embedded commas/quotes/newlines, BOM, CRLF
+function csvParse(text){
+  if(text.charCodeAt(0)===0xFEFF)text=text.slice(1); // strip BOM
+  const rows=[];let row=[],cur='',inQ=false,i=0;
+  while(i<text.length){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){if(text[i+1]==='"'){cur+='"';i+=2;continue;}inQ=false;i++;continue;}
+      cur+=c;i++;continue;
+    }
+    if(c==='"'){inQ=true;i++;continue;}
+    if(c===','){row.push(cur);cur='';i++;continue;}
+    if(c==='\r'){i++;continue;}
+    if(c==='\n'){row.push(cur);rows.push(row);row=[];cur='';i++;continue;}
+    cur+=c;i++;
+  }
+  if(cur.length||row.length){row.push(cur);rows.push(row);}
+  // Drop trailing empty rows
+  while(rows.length&&rows[rows.length-1].every(x=>x===''))rows.pop();
+  if(!rows.length)return{headers:[],rows:[]};
+  const headers=rows[0].map(h=>h.trim().toLowerCase());
+  const objs=rows.slice(1).map(r=>{const o={};headers.forEach((h,j)=>{o[h]=(r[j]??'').trim()});return o});
+  return{headers,rows:objs};
+}
+function downloadFile(name,content,mime){
+  const blob=new Blob([content],{type:mime||'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},100);
+}
+function nowStamp(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`}
+
+// ═══════════════════════════════════════════════
+//  INVENTORY EXPORT / IMPORT
+// ═══════════════════════════════════════════════
+const INV_HEADERS=['name','room','location','status','description','serial','notes','borrower','purpose','taken_to','checked_out_at','added_at'];
+function exportInventory(){
+  const items=load();
+  if(!items.length){alert('No items to export.');return;}
+  const rows=items.map(i=>({
+    name:i.name,room:i.room||'',location:i.location||'',status:i.status||'home',
+    description:i.desc||'',serial:i.serial||'',notes:i.notes||'',
+    borrower:i.borrower||'',purpose:i.purpose||'',taken_to:i.whereAt||'',
+    checked_out_at:i.checkedOutAt||'',added_at:i.addedAt||''
+  }));
+  downloadFile(`mystuff-inventory-${nowStamp()}.csv`,csvStringify(rows,INV_HEADERS));
+}
+
+let importQueue=[],importIndex=0,importExisting=[],importApplyAll=null;
+function startInventoryImport(csvText){
+  const{headers,rows}=csvParse(csvText);
+  if(!headers.includes('name')){alert('CSV must include a "name" column.');return;}
+  const valid=rows.filter(r=>r.name);
+  if(!valid.length){alert('No valid rows found (every row needs a name).');return;}
+  importQueue=valid;importIndex=0;importExisting=load();importApplyAll=null;
+  processNextImport();
+}
+function processNextImport(){
+  if(importIndex>=importQueue.length){
+    save(importExisting);
+    document.getElementById('conflict-overlay').classList.remove('open');
+    renderStuff();
+    alert(`Import done. ${importQueue.length} row${importQueue.length===1?'':'s'} processed.`);
+    return;
+  }
+  const row=importQueue[importIndex];
+  const dupIdx=importExisting.findIndex(i=>i.name.toLowerCase()===row.name.toLowerCase());
+  if(dupIdx===-1){
+    addImportedRow(row);importIndex++;processNextImport();return;
+  }
+  // Conflict: respect applyAll if set
+  if(importApplyAll==='skip'){importIndex++;processNextImport();return;}
+  if(importApplyAll==='replace'){replaceImportedRow(dupIdx,row);importIndex++;processNextImport();return;}
+  if(importApplyAll==='add'){addImportedRow(row);importIndex++;processNextImport();return;}
+  showConflict(importExisting[dupIdx],row);
+}
+function addImportedRow(row){
+  const now=new Date().toISOString();
+  importExisting.push({
+    id:genId(),name:row.name,room:row.room||'',location:row.location||row.room||'',
+    desc:row.description||null,serial:row.serial||null,notes:row.notes||null,
+    photo:null,
+    status:['home','out','broken','empty'].includes(row.status)?row.status:'home',
+    borrower:row.borrower||null,purpose:row.purpose||null,whereAt:row.taken_to||null,
+    checkedOutAt:row.checked_out_at||null,
+    addedAt:row.added_at||now,
+    log:[{type:'added',label:'Imported from CSV',at:now}]
+  });
+}
+function replaceImportedRow(idx,row){
+  const ex=importExisting[idx];const now=new Date().toISOString();
+  importExisting[idx]={...ex,
+    name:row.name,room:row.room||ex.room,location:row.location||ex.location,
+    desc:row.description||ex.desc,serial:row.serial||ex.serial,notes:row.notes||ex.notes,
+    status:['home','out','broken','empty'].includes(row.status)?row.status:ex.status,
+    borrower:row.borrower||ex.borrower,purpose:row.purpose||ex.purpose,whereAt:row.taken_to||ex.whereAt,
+    log:[...(ex.log||[]),{type:'added',label:'Updated via CSV import',at:now}]
+  };
+}
+function showConflict(existing,incoming){
+  document.getElementById('conf-progress').textContent=`Row ${importIndex+1} of ${importQueue.length}`;
+  const fmt=(label,val)=>val?`<div class="conf-row"><strong>${label}:</strong> ${esc(val)}</div>`:'';
+  document.getElementById('conf-existing-body').innerHTML=
+    `<div style="font-family:var(--font-head);font-size:15px;font-weight:800;margin-bottom:4px">${esc(existing.name)}</div>`+
+    fmt('Location',existing.location||existing.room)+
+    fmt('Serial',existing.serial)+
+    fmt('Status',existing.status);
+  document.getElementById('conf-incoming-body').innerHTML=
+    `<div style="font-family:var(--font-head);font-size:15px;font-weight:800;margin-bottom:4px">${esc(incoming.name)}</div>`+
+    fmt('Location',incoming.location||incoming.room)+
+    fmt('Serial',incoming.serial)+
+    fmt('Status',incoming.status);
+  document.getElementById('conflict-overlay').classList.add('open');
+}
+document.getElementById('conf-skip').addEventListener('click',()=>{importIndex++;processNextImport()});
+document.getElementById('conf-replace').addEventListener('click',()=>{
+  const row=importQueue[importIndex];
+  const dupIdx=importExisting.findIndex(i=>i.name.toLowerCase()===row.name.toLowerCase());
+  if(dupIdx!==-1)replaceImportedRow(dupIdx,row);
+  importIndex++;processNextImport();
+});
+document.getElementById('conf-add').addEventListener('click',()=>{
+  addImportedRow(importQueue[importIndex]);importIndex++;processNextImport();
+});
+document.getElementById('conf-cancel').addEventListener('click',()=>{
+  if(confirm(`Cancel import? Rows already processed will be kept.`)){
+    save(importExisting);
+    document.getElementById('conflict-overlay').classList.remove('open');
+    renderStuff();
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  SHOPPING EXPORT / IMPORT
+// ═══════════════════════════════════════════════
+const SHOP_HEADERS=['name','quantity','status','notes','linked_item','created_at'];
+function exportShopping(){
+  const shop=loadShop();const items=load();
+  if(!shop.length){alert('Shopping list is empty.');return;}
+  const rows=shop.map(s=>({
+    name:s.name,quantity:s.qty||1,status:s.status||'need',notes:s.notes||'',
+    linked_item:s.linkedItemId?(items.find(i=>i.id===s.linkedItemId)?.name||''):'',
+    created_at:s.createdAt||''
+  }));
+  downloadFile(`mystuff-shopping-${nowStamp()}.csv`,csvStringify(rows,SHOP_HEADERS));
+}
+function importShopping(csvText){
+  const{headers,rows}=csvParse(csvText);
+  if(!headers.includes('name')){alert('CSV must include a "name" column.');return;}
+  const valid=rows.filter(r=>r.name);
+  if(!valid.length){alert('No valid rows found.');return;}
+  const shop=loadShop();const items=load();const now=new Date().toISOString();
+  let added=0;
+  valid.forEach(row=>{
+    const linkedItem=row.linked_item?items.find(i=>i.name.toLowerCase()===row.linked_item.toLowerCase()):null;
+    shop.push({
+      id:genId(),name:row.name,
+      qty:Math.max(1,parseInt(row.quantity)||1),
+      notes:row.notes||null,
+      status:['need','ordered','arrived','stocked'].includes(row.status)?row.status:'need',
+      linkedItemId:linkedItem?linkedItem.id:null,
+      createdAt:row.created_at||now,
+      log:[]
+    });
+    added++;
+  });
+  saveShop(shop);renderShop();
+  alert(`Imported ${added} item${added===1?'':'s'} to shopping list.`);
+}
+
+// ═══════════════════════════════════════════════
+//  TOOLS MENU WIRING
+// ═══════════════════════════════════════════════
+function updateToolsSubs(){
+  const inv=load();const shop=loadShop();
+  document.getElementById('export-inv-sub').textContent=inv.length?`${inv.length} item${inv.length===1?'':'s'} ready to export`:'No items yet to export';
+  document.getElementById('export-shop-sub').textContent=shop.length?`${shop.length} card${shop.length===1?'':'s'} ready to export`:'Shopping list is empty';
+  // Storage stats
+  const statsEl=document.getElementById('storage-stats');
+  if(statsEl){
+    let total=0,photoBytes=0,photoCount=0;
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);const v=localStorage.getItem(k)||'';
+      total+=k.length+v.length;
+    }
+    inv.forEach(it=>{if(it.photo){photoBytes+=it.photo.length;photoCount++;}});
+    const mb=n=>(n/(1024*1024)).toFixed(2);
+    // Most browsers allow ~5MB; we warn at 4MB
+    const pct=Math.min(100,Math.round(total/(5*1024*1024)*100));
+    const barColor=pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)';
+    statsEl.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Used</span><strong style="color:var(--text)">${mb(total)} MB</strong></div>
+      <div style="background:var(--card);height:6px;border-radius:3px;overflow:hidden;margin-bottom:8px"><div style="background:${barColor};height:100%;width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between"><span>Photos</span><span><strong style="color:var(--text)">${photoCount}</strong> items, <strong style="color:var(--text)">${mb(photoBytes)} MB</strong></span></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px">Limit is usually ~5 MB. ${pct>=80?'⚠ Running low.':''}</div>`;
+    document.getElementById('shrink-sub').textContent=photoCount?`${photoCount} photo${photoCount===1?'':'s'} can be re-compressed`:'No photos to shrink';
+  }
+}
+document.getElementById('stuff-menu-btn').addEventListener('click',()=>{updateToolsSubs();document.getElementById('stuff-tools-overlay').classList.add('open')});
+document.getElementById('stuff-tools-close').addEventListener('click',()=>document.getElementById('stuff-tools-overlay').classList.remove('open'));
+document.getElementById('stuff-tools-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('stuff-tools-overlay'))document.getElementById('stuff-tools-overlay').classList.remove('open')});
+document.getElementById('shop-menu-btn').addEventListener('click',()=>{updateToolsSubs();document.getElementById('shop-tools-overlay').classList.add('open')});
+document.getElementById('shop-tools-close').addEventListener('click',()=>document.getElementById('shop-tools-overlay').classList.remove('open'));
+document.getElementById('shop-tools-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('shop-tools-overlay'))document.getElementById('shop-tools-overlay').classList.remove('open')});
+
+document.getElementById('export-inv-btn').addEventListener('click',()=>{document.getElementById('stuff-tools-overlay').classList.remove('open');exportInventory()});
+document.getElementById('import-inv-btn').addEventListener('click',()=>document.getElementById('import-inv-file').click());
+
+// Shrink all existing photos to reclaim storage
+function shrinkOnePhoto(dataUrl,maxDim=1280,quality=0.7){
+  return new Promise((resolve,reject)=>{
+    if(!dataUrl||!dataUrl.startsWith('data:')){resolve(dataUrl);return;}
+    const img=new Image();
+    img.onload=()=>{
+      let{width:w,height:h}=img;
+      if(w>maxDim||h>maxDim){
+        if(w>h){h=Math.round(h*(maxDim/w));w=maxDim;}
+        else{w=Math.round(w*(maxDim/h));h=maxDim;}
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      resolve(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>resolve(dataUrl); // keep original on error
+    img.src=dataUrl;
+  });
+}
+document.getElementById('shrink-photos-btn').addEventListener('click',async()=>{
+  const items=load();
+  const withPhotos=items.filter(i=>i.photo);
+  if(!withPhotos.length){alert('No photos to shrink.');return;}
+  if(!confirm(`Re-compress ${withPhotos.length} photo${withPhotos.length===1?'':'s'}? This may take a few seconds and reduces image quality slightly to save storage.`))return;
+  document.getElementById('stuff-tools-overlay').classList.remove('open');
+  const btn=document.getElementById('shrink-photos-btn');btn.style.pointerEvents='none';btn.style.opacity='0.6';
+  let beforeBytes=0,afterBytes=0,done=0;
+  for(const item of items){
+    if(!item.photo)continue;
+    beforeBytes+=item.photo.length;
+    try{
+      const shrunk=await shrinkOnePhoto(item.photo,1280,0.7);
+      item.photo=shrunk;
+      afterBytes+=shrunk.length;
+      done++;
+    }catch{afterBytes+=item.photo.length;}
+  }
+  // Save attempt — use raw setItem since the items may now fit when they didn't before
+  try{localStorage.setItem(ITEMS_KEY,JSON.stringify(items));}
+  catch(e){alert('Even after shrinking, storage is still over the limit. You may need to delete some items with photos.');btn.style.pointerEvents='';btn.style.opacity='';return;}
+  btn.style.pointerEvents='';btn.style.opacity='';
+  const mb=n=>(n/(1024*1024)).toFixed(2);
+  alert(`Done. Shrunk ${done} photo${done===1?'':'s'}.\nBefore: ${mb(beforeBytes)} MB\nAfter: ${mb(afterBytes)} MB\nSaved: ${mb(beforeBytes-afterBytes)} MB`);
+  renderStuff();
+});
+document.getElementById('import-inv-file').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{document.getElementById('stuff-tools-overlay').classList.remove('open');startInventoryImport(ev.target.result);};
+  r.onerror=()=>alert('Failed to read file.');
+  r.readAsText(f);e.target.value='';
+});
+document.getElementById('export-shop-btn').addEventListener('click',()=>{document.getElementById('shop-tools-overlay').classList.remove('open');exportShopping()});
+document.getElementById('import-shop-btn').addEventListener('click',()=>document.getElementById('import-shop-file').click());
+document.getElementById('import-shop-file').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{document.getElementById('shop-tools-overlay').classList.remove('open');importShopping(ev.target.result);};
+  r.onerror=()=>alert('Failed to read file.');
+  r.readAsText(f);e.target.value='';
+});
+
+// ═══════════════════════════════════════════════
+//  OCR (lazy-loaded Tesseract.js)
+// ═══════════════════════════════════════════════
+let tessLoading=null,ocrTargetId=null;
+function loadTesseract(){
+  if(window.Tesseract)return Promise.resolve();
+  if(tessLoading)return tessLoading;
+  tessLoading=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js';
+    s.onload=()=>resolve();
+    s.onerror=()=>{tessLoading=null;reject(new Error('Failed to load OCR library'))};
+    document.head.appendChild(s);
+  });
+  return tessLoading;
+}
+function openOcr(targetId){
+  ocrTargetId=targetId;
+  const stage=document.getElementById('ocr-stage');
+  stage.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" style="width:42px;height:42px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><div style="font-size:13px;color:var(--muted)">No image yet</div>`;
+  document.getElementById('ocr-result').value='';
+  document.getElementById('ocr-result-wrap').style.display='none';
+  document.getElementById('ocr-candidates').style.display='none';
+  document.getElementById('ocr-candidates').innerHTML='';
+  document.getElementById('ocr-file').value='';
+  document.getElementById('ocr-overlay').classList.add('open');
+}
+document.getElementById('ocr-close').addEventListener('click',()=>document.getElementById('ocr-overlay').classList.remove('open'));
+document.getElementById('ocr-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('ocr-overlay'))document.getElementById('ocr-overlay').classList.remove('open')});
+document.getElementById('ocr-pick').addEventListener('click',()=>document.getElementById('ocr-file').click());
+document.getElementById('ocr-file').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  const stage=document.getElementById('ocr-stage');
+  const url=URL.createObjectURL(f);
+  stage.innerHTML=`<img id="ocr-img" src="${url}" alt=""><div class="ocr-progress"><div class="ocr-progress-bar" id="ocr-bar"></div></div><div class="ocr-status" id="ocr-stat">Loading OCR engine…</div>`;
+  try{
+    await loadTesseract();
+    document.getElementById('ocr-stat').textContent='Recognizing text…';
+    const worker=await Tesseract.createWorker('eng',1,{
+      logger:m=>{
+        const bar=document.getElementById('ocr-bar');const stat=document.getElementById('ocr-stat');
+        if(!bar||!stat)return;
+        if(m.status==='recognizing text'){bar.style.width=Math.round(m.progress*100)+'%';stat.textContent=`Recognizing text… ${Math.round(m.progress*100)}%`;}
+        else if(m.status){stat.textContent=m.status;}
+      }
+    });
+    const isSerial=ocrTargetId==='f-serial';
+    if(isSerial){
+      // Restrict character set: alphanumerics + common serial separators
+      await worker.setParameters({
+        tessedit_char_whitelist:'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-/',
+        tessedit_pageseg_mode:'6'
+      });
+    }
+    const{data:{text}}=await worker.recognize(f);
+    await worker.terminate();
+    const cleaned=text.trim();
+    // Build line candidates
+    const lines=cleaned.split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length>0);
+    const candEl=document.getElementById('ocr-candidates');
+    if(lines.length){
+      const scored=lines.map(line=>({line,score:isSerial?scoreSerial(line):0}));
+      if(isSerial)scored.sort((a,b)=>b.score-a.score);
+      const topScore=scored[0]?.score||0;
+      candEl.innerHTML=`<div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:6px">${isSerial?'LIKELY SERIALS — TAP TO USE':'DETECTED LINES — TAP TO USE'}</div>`+
+        scored.map(({line,score})=>`<button type="button" class="ocr-cand ${isSerial&&score>=topScore&&score>=5?'top':''}" data-line="${esc(line)}">${esc(line)}</button>`).join('');
+      candEl.style.display='block';
+      candEl.querySelectorAll('.ocr-cand').forEach(b=>b.addEventListener('click',()=>{
+        document.getElementById('ocr-result').value=b.dataset.line;
+      }));
+      // Pre-fill the textarea with the top candidate (for serial) or full text (for general)
+      document.getElementById('ocr-result').value=isSerial?scored[0].line:cleaned;
+    } else {
+      candEl.style.display='none';
+      document.getElementById('ocr-result').value=cleaned;
+    }
+    document.getElementById('ocr-result-wrap').style.display='block';
+    document.getElementById('ocr-stat').textContent=cleaned?(isSerial?'Pick the right line or edit it, then tap "Use This Text".':'Pick a line or edit it, then tap "Use This Text".'):'No text found. Try a clearer photo with the text filling more of the frame.';
+    document.getElementById('ocr-bar').style.width='100%';
+  }catch(err){
+    console.error('OCR failed:',err);
+    const detail=esc(err?.message||err?.toString()||'Unknown error');
+    stage.innerHTML=`<div style="color:var(--red);font-size:13px;text-align:center;font-weight:700">⚠ OCR failed</div>
+      <div class="ocr-status" style="margin-top:8px;text-align:center;color:var(--text);font-size:11px;background:var(--card);padding:8px;border-radius:6px;font-family:var(--font-mono);word-break:break-word;max-width:100%">${detail}</div>
+      <div class="ocr-status" style="margin-top:8px;text-align:center;line-height:1.5">First-time use needs an internet connection to download the OCR engine (~13 MB). Once cached, it works offline.</div>`;
+  }
+  URL.revokeObjectURL(url);e.target.value='';
+});
+function scoreSerial(line){
+  let s=0;const len=line.length;
+  if(len>=6&&len<=30)s+=2;
+  if(/[0-9]/.test(line))s+=2;
+  if(/[A-Za-z]/.test(line)&&/[0-9]/.test(line))s+=3;
+  if(/^[A-Za-z0-9\-\/]+$/.test(line))s+=2;
+  if(/^[A-Z0-9\-]+$/.test(line))s+=2;
+  // Penalize lines that look like prose
+  if(/\s{2,}/.test(line))s-=1;
+  if(/^[A-Za-z]+$/.test(line)&&len<15)s-=1;
+  return s;
+}
+document.getElementById('ocr-apply').addEventListener('click',()=>{
+  const text=document.getElementById('ocr-result').value.trim();
+  if(!text||!ocrTargetId)return;
+  const target=document.getElementById(ocrTargetId);
+  if(target){target.value=text;target.dispatchEvent(new Event('input'));}
+  document.getElementById('ocr-overlay').classList.remove('open');
+});
+document.querySelectorAll('[data-ocr-target]').forEach(btn=>btn.addEventListener('click',()=>openOcr(btn.dataset.ocrTarget)));
+
+// ═══════════════════════════════════════════════
+//  PWA
+// ═══════════════════════════════════════════════
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;document.getElementById('install-banner').style.display='flex'});
+document.getElementById('install-btn').addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;document.getElementById('install-banner').style.display='none'});
+document.getElementById('dismiss-banner').addEventListener('click',()=>document.getElementById('install-banner').style.display='none');
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}
+
+renderStuff();
+</script>
+</body>
+</html>
