@@ -1,0 +1,14 @@
+{
+  "name": "inventory-6.0",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "lint": "htmlhint index.html && node scripts/check-js.mjs",
+    "test": "node scripts/runtime-check.mjs"
+  },
+  "devDependencies": {
+    "htmlhint": "^1.1.4",
+    "playwright-core": "^1.49.1"
+  }
+}
