@@ -119,8 +119,11 @@ body{
 .sub-row .mat-cost{width:74px;text-align:right}
 .sub-row .mat-qty:focus,.sub-row .mat-cost:focus{border-color:var(--purple)}
 .mat-cost-wrap{position:relative;display:inline-flex;align-items:center}
-.mat-cost-wrap::before{content:"$";position:absolute;left:6px;color:var(--muted);font-size:11px;pointer-events:none}
-.sub-row .mat-cost{padding-left:14px;text-align:left}
+.mat-cost-wrap::before{content:"$";position:absolute;left:7px;color:var(--muted);font-size:11px;pointer-events:none}
+.mat-cost-wrap::after{content:"/ ea";position:absolute;right:8px;color:var(--muted);font-size:9px;font-weight:700;letter-spacing:.5px;pointer-events:none}
+.sub-row .mat-cost{padding-left:14px;padding-right:30px;text-align:left;width:96px}
+.sub-row .mat-qty{width:50px}
+.sub-row.sub-done .mat-qty,.sub-row.sub-done .mat-cost{opacity:.5}
 
 /* Shopping list sheet — task grouping + total bar */
 .shop-task{margin-bottom:18px}
@@ -440,16 +443,19 @@ function listProgress(list){
 const subProgress = t => listProgress(t.subtasks);
 const matProgress = t => listProgress(t.materials);
 
-// Format a material's qty/cost suffix, e.g. " × 4 — $11.00". Returns '' when
-// both are missing so leftover separators don't appear.
+// Format a material's qty/cost suffix as a breakdown that makes per-unit
+// pricing unambiguous, e.g. " — × 4 · $2.75 ea = $11.00".
 function matMeta(m){
+  const hasQty  = m.qty  != null && m.qty  !== '' && Number(m.qty) > 1;
+  const hasCost = m.cost != null && m.cost !== '';
+  if(!hasQty && !hasCost) return '';
+  const qty  = Math.max(1, Number(m.qty) || 1);
+  const unit = hasCost ? Number(m.cost) : null;
   const bits = [];
-  if(m.qty != null && m.qty !== '' && m.qty !== 1) bits.push(`× ${m.qty}`);
-  if(m.cost != null && m.cost !== ''){
-    const lineCost = Number(m.cost) * Math.max(1, Number(m.qty) || 1);
-    bits.push(`$${lineCost.toFixed(2)}`);
-  }
-  return bits.length ? ' — ' + bits.join(' · ') : '';
+  if(hasQty)  bits.push(`× ${qty}`);
+  if(hasCost) bits.push(`$${unit.toFixed(2)} ea`);
+  if(hasQty && hasCost) bits.push(`= $${(unit * qty).toFixed(2)}`);
+  return ' — ' + bits.join(' · ');
 }
 
 // Sum of cost*qty across an array of materials (unchecked-only by default).
@@ -762,18 +768,26 @@ function openShopSheet(){
           <span>${esc(task.title)}</span>
           <span class="shop-task-meta">${colLabel(task.status)}</span>
         </div>
-        ${mats.map(m => `
-          <div class="sub-row" data-shop="${task.id}:${esc(m.id)}">
-            <input type="checkbox" class="sub-check" data-shop-toggle="${task.id}:${esc(m.id)}">
-            <div class="sub-input" style="cursor:default">${esc(m.text)}</div>
-            ${(m.qty != null && m.qty !== '') || (m.cost != null && m.cost !== '') ? `
-              <span class="shop-row-meta">
-                ${m.qty != null && m.qty !== '' ? `<b>× ${esc(String(m.qty))}</b>` : ''}
-                ${m.cost != null && m.cost !== '' ? `&nbsp;&nbsp;$${(Number(m.cost) * Math.max(1, Number(m.qty) || 1)).toFixed(2)}` : ''}
-              </span>
-            ` : ''}
-          </div>
-        `).join('')}
+        ${mats.map(m => {
+          const hasQty  = m.qty  != null && m.qty  !== '' && Number(m.qty) > 1;
+          const hasCost = m.cost != null && m.cost !== '';
+          const qty  = Math.max(1, Number(m.qty) || 1);
+          const unit = hasCost ? Number(m.cost) : null;
+          let meta = '';
+          if(hasQty || hasCost){
+            const parts = [];
+            if(hasQty)  parts.push(`<b>× ${qty}</b>`);
+            if(hasCost) parts.push(`$${unit.toFixed(2)} ea`);
+            if(hasQty && hasCost) parts.push(`<b>= $${(unit * qty).toFixed(2)}</b>`);
+            meta = `<span class="shop-row-meta">${parts.join(' &middot; ')}</span>`;
+          }
+          return `
+            <div class="sub-row" data-shop="${task.id}:${esc(m.id)}">
+              <input type="checkbox" class="sub-check" data-shop-toggle="${task.id}:${esc(m.id)}">
+              <div class="sub-input" style="cursor:default">${esc(m.text)}</div>
+              ${meta}
+            </div>`;
+        }).join('')}
       </div>
     `).join('');
     document.getElementById('shopTotalCount').textContent = `${count} item${count !== 1 ? 's' : ''}`;
@@ -968,8 +982,8 @@ function renderFormList(kind){
   if(!list.length){ wrap.innerHTML = ''; return; }
   wrap.innerHTML = list.map((s, i) => {
     const extras = kind === 'mat' ? `
-      <input class="mat-qty"  data-mat-qty="${i}"  type="number" min="1"  step="1"    inputmode="numeric" value="${s.qty  ?? ''}" placeholder="qty">
-      <span class="mat-cost-wrap"><input class="mat-cost" data-mat-cost="${i}" type="number" min="0" step="0.01" inputmode="decimal" value="${s.cost ?? ''}" placeholder="0.00"></span>
+      <input class="mat-qty"  data-mat-qty="${i}"  type="number" min="1"  step="1"    inputmode="numeric" value="${s.qty  ?? ''}" placeholder="qty"  title="How many you need">
+      <span class="mat-cost-wrap"><input class="mat-cost" data-mat-cost="${i}" type="number" min="0" step="0.01" inputmode="decimal" value="${s.cost ?? ''}" placeholder="0.00" title="Cost per item — total is calculated automatically"></span>
     ` : '';
     return `<div class="sub-row ${s.done ? 'sub-done' : ''}" data-i="${i}">
       <input type="checkbox" class="sub-check" data-${kind}-toggle="${i}" ${s.done ? 'checked' : ''}>
