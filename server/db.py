@@ -1,8 +1,9 @@
 """Database models and session helpers."""
 import os
+import json
 from datetime import datetime
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Text, DateTime, ForeignKey
+    create_engine, Column, Integer, String, Text, DateTime, ForeignKey, inspect, text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 
@@ -67,6 +68,35 @@ class Task(Base):
     google_task_id = Column(String, nullable=True)
     google_event_id = Column(String, nullable=True)
     source_email_id = Column(String, nullable=True)
+    # JSON-encoded list of {"id": str, "text": str, "done": bool}. Stored as
+    # Text so the same DDL works on SQLite and Postgres without a typed JSON
+    # column (and so the in-place migration in _migrate() is portable).
+    subtasks = Column(Text, nullable=True)
+
+    def get_subtasks(self):
+        if not self.subtasks:
+            return []
+        try:
+            arr = json.loads(self.subtasks)
+            return arr if isinstance(arr, list) else []
+        except (ValueError, TypeError):
+            return []
+
+    def set_subtasks(self, items):
+        if items is None:
+            self.subtasks = None
+            return
+        clean = []
+        for s in items:
+            if not isinstance(s, dict):
+                continue
+            sid = str(s.get("id") or "").strip() or _gen_sub_id()
+            txt = str(s.get("text") or "").strip()
+            if not txt:
+                continue
+            done = bool(s.get("done"))
+            clean.append({"id": sid, "text": txt[:200], "done": done})
+        self.subtasks = json.dumps(clean) if clean else None
 
     def to_dict(self):
         return {
@@ -82,7 +112,13 @@ class Task(Base):
             "googleTaskId": self.google_task_id,
             "googleEventId": self.google_event_id,
             "sourceEmailId": self.source_email_id,
+            "subtasks": self.get_subtasks(),
         }
+
+
+def _gen_sub_id():
+    import secrets
+    return "s_" + secrets.token_hex(4)
 
 
 class EmailSuggestion(Base):
@@ -119,6 +155,32 @@ class SyncState(Base):
 
 def init_db():
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate():
+    """Add columns to existing tables when the SQLAlchemy model grows.
+
+    create_all() only creates missing tables, not missing columns, so when we
+    extend a model we need a tiny ALTER TABLE pass. Each migration step is
+    idempotent (checks the column list first) and works on both SQLite and
+    Postgres."""
+    insp = inspect(engine)
+    if "tasks" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("tasks")}
+    statements = []
+    if "subtasks" not in cols:
+        statements.append("ALTER TABLE tasks ADD COLUMN subtasks TEXT")
+    if not statements:
+        return
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                print(f"[db] migrated: {stmt}")
+            except Exception as e:
+                print(f"[db] migration step failed ({stmt}): {e}")
 
 
 def session():

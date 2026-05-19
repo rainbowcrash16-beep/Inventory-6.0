@@ -88,6 +88,28 @@ body{
 .due-chip.due-later   {background:var(--card);border:1px solid var(--border);color:var(--muted)}
 @keyframes dueGlow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 8px color-mix(in srgb,var(--red) 40%,transparent)}}
 
+/* Subtasks — card progress badge + bottom progress bar */
+.sub-prog{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:2px 7px;font-size:9px;font-weight:700;letter-spacing:.5px;background:var(--card);border:1px solid var(--border);color:var(--muted);margin-top:6px}
+.sub-prog.sp-some{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 50%,var(--border))}
+.sub-prog.sp-done{color:var(--green);border-color:color-mix(in srgb,var(--green) 60%,var(--border))}
+.kcard-progress{position:absolute;left:4px;right:0;bottom:0;height:2px;background:transparent;border-radius:0 0 10px 0;overflow:hidden}
+.kcard-progress > i{display:block;height:100%;background:var(--col-accent);transition:width .25s}
+
+/* Subtasks — editor and detail-sheet list rows */
+.sub-list{display:flex;flex-direction:column;gap:6px}
+.sub-row{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+.sub-row .sub-check{appearance:none;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--muted);background:transparent;cursor:pointer;flex-shrink:0;position:relative;transition:border-color .15s,background .15s}
+.sub-row .sub-check:checked{background:var(--green);border-color:var(--green)}
+.sub-row .sub-check:checked::after{content:"";position:absolute;left:4px;top:1px;width:5px;height:10px;border:solid var(--dark);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.sub-row .sub-input{flex:1;background:transparent;border:none;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;padding:2px 0}
+.sub-row .sub-input::placeholder{color:var(--muted)}
+.sub-row.sub-done .sub-input{color:var(--muted);text-decoration:line-through}
+.sub-row .sub-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px;transition:color .15s,background .15s}
+.sub-row .sub-del:hover{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+.sub-add-row{display:flex;gap:8px;margin-top:8px}
+.sub-add-row input{flex:1;background:var(--panel);border:1px dashed var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s,border-style .15s}
+.sub-add-row input:focus{border-color:var(--green);border-style:solid}
+
 /* Inline markdown rendering inside descriptions */
 .md{line-height:1.5}
 .md p{margin:0 0 6px}
@@ -256,6 +278,13 @@ body{
       <textarea class="textarea" id="f-desc" maxlength="600" placeholder="Optional details, notes, links…"></textarea>
     </div>
     <div class="field">
+      <label>CHECKLIST</label>
+      <div class="sub-list" id="f-subs"></div>
+      <div class="sub-add-row">
+        <input id="f-sub-new" maxlength="200" placeholder="+ add step (Enter to add)" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
       <label>PRIORITY</label>
       <div class="pri-row" id="f-pri">
         <button type="button" class="pri-pill p-urgent" data-pri="urgent">URGENT</button>
@@ -345,7 +374,20 @@ const state = {
   formPriority: 'medium',
   formStatus: 'backlog',
   formDueAt: '',          // datetime-local string
+  formSubtasks: [],       // [{id, text, done}] while the edit sheet is open
 };
+
+function genSubId(){
+  return 's_' + Math.random().toString(36).slice(2,10);
+}
+
+// Compute "n done / N total" for a task's subtasks. Returns null if no subs.
+function subProgress(t){
+  const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
+  if(!subs.length) return null;
+  const done = subs.filter(s => s.done).length;
+  return {done, total: subs.length};
+}
 
 function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -504,6 +546,14 @@ function cardHTML(t){
   const bucket = dueBucket(t.dueAt);
   const dueLabel = bucket ? fmtDue(t.dueAt) : '';
   const dueIcon = bucket === 'overdue' ? '⚠' : (bucket === 'today' ? '●' : '⏰');
+  const prog = subProgress(t);
+  let progBadge = '', progBar = '';
+  if(prog){
+    const cls = prog.done === prog.total ? 'sp-done' : (prog.done > 0 ? 'sp-some' : '');
+    progBadge = `<span class="sub-prog ${cls}">☑ ${prog.done}/${prog.total}</span>`;
+    const pct = Math.round((prog.done / prog.total) * 100);
+    progBar = `<div class="kcard-progress"><i style="width:${pct}%"></i></div>`;
+  }
   return `<div class="kcard" data-id="${t.id}">
     <div class="kcard-stripe p-${t.priority}"></div>
     <div class="kcard-top">
@@ -511,7 +561,11 @@ function cardHTML(t){
       ${showBadge ? `<span class="badge ${PRI_BADGE[t.priority]}">${PRI_LABEL[t.priority]}</span>` : ''}
     </div>
     ${t.description ? `<div class="kcard-desc">${esc(t.description)}</div>` : ''}
-    ${bucket ? `<span class="due-chip due-${bucket}">${dueIcon} ${esc(dueLabel)}</span>` : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${bucket ? `<span class="due-chip due-${bucket}">${dueIcon} ${esc(dueLabel)}</span>` : ''}
+      ${progBadge}
+    </div>
+    ${progBar}
   </div>`;
 }
 
@@ -555,6 +609,31 @@ async function moveTask(id, toStatus){
       t.status = prevStatus; t.completedAt = prevCompleted;
       renderBoard();
       toast('Move failed: ' + err.message, true);
+    }
+  }else{
+    saveLocalTasks();
+  }
+}
+
+async function toggleSubtaskInSheet(taskId, subId){
+  const t = findTask(taskId);
+  if(!t || !Array.isArray(t.subtasks)) return;
+  const s = t.subtasks.find(x => x.id === subId);
+  if(!s) return;
+  s.done = !s.done;
+  // refresh card behind the sheet (progress)
+  renderBoard();
+  if(state.mode === 'api'){
+    try{
+      const updated = await apiFetch('/api/tasks/' + encodeURIComponent(taskId), {
+        method: 'PATCH', body: JSON.stringify({subtasks: t.subtasks}),
+      });
+      Object.assign(t, updated);
+      renderBoard();
+    }catch(err){
+      s.done = !s.done;       // revert
+      renderBoard();
+      toast('Update failed: ' + err.message, true);
     }
   }else{
     saveLocalTasks();
@@ -670,6 +749,12 @@ function openEditSheet(opts){
   document.getElementById('f-desc').value  = existing ? (existing.description || '') : '';
   state.formPriority = existing ? existing.priority : 'medium';
   state.formStatus   = existing ? existing.status   : (opts.status || 'backlog');
+  // deep copy so editing the form doesn't mutate the live task until SAVE
+  state.formSubtasks = existing && Array.isArray(existing.subtasks)
+    ? existing.subtasks.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}))
+    : [];
+  renderFormSubs();
+  document.getElementById('f-sub-new').value = '';
   // Due date — datetime-local wants 'YYYY-MM-DDTHH:MM' in local time
   let dueLocal = '';
   if(existing && existing.dueAt){
@@ -695,6 +780,21 @@ function syncStatusPills(){
     p.classList.toggle('sel', p.dataset.status === state.formStatus);
   });
 }
+
+function renderFormSubs(){
+  const wrap = document.getElementById('f-subs');
+  if(!state.formSubtasks.length){
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = state.formSubtasks.map((s, i) => `
+    <div class="sub-row ${s.done ? 'sub-done' : ''}" data-i="${i}">
+      <input type="checkbox" class="sub-check" data-sub-toggle="${i}" ${s.done ? 'checked' : ''}>
+      <input class="sub-input" data-sub-edit="${i}" value="${esc(s.text)}" maxlength="200">
+      <button type="button" class="sub-del" data-sub-del="${i}" aria-label="Delete step">×</button>
+    </div>
+  `).join('');
+}
 async function saveFromForm(){
   const titleEl = document.getElementById('f-title');
   const title = titleEl.value.trim();
@@ -708,32 +808,35 @@ async function saveFromForm(){
   const dueRaw = document.getElementById('f-due').value;     // local datetime string or ''
   // Convert local datetime-local to ISO for the API
   const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
+  // Collect the latest text from the inline inputs (user may have edited
+  // text without blurring), then drop blanks.
+  document.querySelectorAll('#f-subs [data-sub-edit]').forEach(el => {
+    const i = +el.dataset.subEdit;
+    if(state.formSubtasks[i]) state.formSubtasks[i].text = el.value;
+  });
+  const subtasks = state.formSubtasks
+    .map(s => ({id: s.id, text: (s.text || '').trim(), done: !!s.done}))
+    .filter(s => s.text);
   const now = Date.now();
 
   if(state.mode === 'api'){
     try{
+      const payload = {
+        title, description: desc,
+        priority: state.formPriority,
+        status: state.formStatus,
+        dueAt, subtasks,
+      };
       let saved;
       if(state.editingId){
         saved = await apiFetch('/api/tasks/' + encodeURIComponent(state.editingId), {
-          method: 'PATCH',
-          body: JSON.stringify({
-            title, description: desc,
-            priority: state.formPriority,
-            status: state.formStatus,
-            dueAt,
-          }),
+          method: 'PATCH', body: JSON.stringify(payload),
         });
         const idx = state.tasks.findIndex(t => t.id === state.editingId);
         if(idx >= 0) state.tasks[idx] = saved;
       }else{
         saved = await apiFetch('/api/tasks', {
-          method: 'POST',
-          body: JSON.stringify({
-            title, description: desc,
-            priority: state.formPriority,
-            status: state.formStatus,
-            dueAt,
-          }),
+          method: 'POST', body: JSON.stringify(payload),
         });
         state.tasks.push(saved);
       }
@@ -755,6 +858,7 @@ async function saveFromForm(){
     t.priority = state.formPriority;
     t.status = state.formStatus;
     t.dueAt = dueAt;
+    t.subtasks = subtasks;
     t.updatedAt = now;
     if(t.status === 'done' && !wasDone) t.completedAt = now;
     if(t.status !== 'done') t.completedAt = null;
@@ -764,7 +868,7 @@ async function saveFromForm(){
       title, description: desc,
       priority: state.formPriority,
       status: state.formStatus,
-      dueAt,
+      dueAt, subtasks,
       createdAt: now, updatedAt: now,
       completedAt: state.formStatus === 'done' ? now : null,
     });
@@ -782,6 +886,18 @@ function openCardSheet(id){
   document.getElementById('cardTitle').textContent = t.title.toUpperCase();
   const colLabel = COLUMNS.find(c => c.status === t.status).label;
   const body = document.getElementById('cardBody');
+  const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
+  const subsHTML = subs.length ? `
+    <div class="sec-label">CHECKLIST · ${subs.filter(s=>s.done).length}/${subs.length}</div>
+    <div class="sub-list" id="sheetSubs">
+      ${subs.map(s => `
+        <div class="sub-row ${s.done ? 'sub-done' : ''}" data-sub-id="${esc(s.id)}">
+          <input type="checkbox" class="sub-check" data-sheet-toggle="${esc(s.id)}" ${s.done ? 'checked' : ''}>
+          <div class="sub-input" style="cursor:default">${esc(s.text)}</div>
+        </div>
+      `).join('')}
+    </div>` : '';
+
   body.innerHTML = `
     <div class="detail-row"><span class="dl">PRIORITY</span>
       <span class="dv"><span class="badge ${PRI_BADGE[t.priority]}">${PRI_LABEL[t.priority]}</span></span></div>
@@ -790,6 +906,7 @@ function openCardSheet(id){
     <div class="detail-row"><span class="dl">CREATED</span><span class="dv">${new Date(t.createdAt).toLocaleString()}</span></div>
     ${t.completedAt ? `<div class="detail-row"><span class="dl">COMPLETED</span><span class="dv">${new Date(t.completedAt).toLocaleString()}</span></div>` : ''}
     ${t.description ? `<div class="sec-label">DESCRIPTION</div><div class="detail-desc">${md(t.description)}</div>` : ''}
+    ${subsHTML}
   `;
   document.querySelectorAll('#moveGrid .btn').forEach(b => {
     b.disabled = b.dataset.move === t.status;
@@ -1000,6 +1117,55 @@ async function init(){
   document.getElementById('saveBtn').addEventListener('click', saveFromForm);
   document.getElementById('f-title').addEventListener('keydown', e => {
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); saveFromForm(); }
+  });
+
+  // Subtask editor — add row, toggle/edit/delete existing
+  const fSubNew = document.getElementById('f-sub-new');
+  fSubNew.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      const v = fSubNew.value.trim();
+      if(!v) return;
+      state.formSubtasks.push({id: genSubId(), text: v, done: false});
+      fSubNew.value = '';
+      renderFormSubs();
+    }
+  });
+  document.getElementById('f-subs').addEventListener('click', e => {
+    const tg = e.target.closest('[data-sub-toggle]');
+    if(tg){
+      const i = +tg.dataset.subToggle;
+      if(state.formSubtasks[i]){
+        state.formSubtasks[i].done = !state.formSubtasks[i].done;
+        renderFormSubs();
+      }
+      return;
+    }
+    const del = e.target.closest('[data-sub-del]');
+    if(del){
+      const i = +del.dataset.subDel;
+      state.formSubtasks.splice(i, 1);
+      renderFormSubs();
+    }
+  });
+  document.getElementById('f-subs').addEventListener('input', e => {
+    const ed = e.target.closest('[data-sub-edit]');
+    if(ed){
+      const i = +ed.dataset.subEdit;
+      if(state.formSubtasks[i]) state.formSubtasks[i].text = ed.value;
+    }
+  });
+
+  // Detail-sheet subtask checkbox → persist toggle live
+  document.getElementById('cardBody').addEventListener('click', e => {
+    const cb = e.target.closest('[data-sheet-toggle]');
+    if(cb && state.sheetCardId){
+      toggleSubtaskInSheet(state.sheetCardId, cb.dataset.sheetToggle);
+      // re-render the sheet's checklist immediately so the checkbox state
+      // reflects without waiting for the network round-trip
+      const t = findTask(state.sheetCardId);
+      if(t) openCardSheet(t.id);
+    }
   });
 
   // Card sheet actions

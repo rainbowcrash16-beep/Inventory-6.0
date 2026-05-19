@@ -134,6 +134,8 @@ def create_task():
             status=data.get("status", "backlog"),
             due_at=_parse_due(data.get("dueAt")),
         )
+        if "subtasks" in data:
+            t.set_subtasks(data.get("subtasks") or [])
         if t.status == "done":
             t.completed_at = datetime.utcnow()
         s.add(t)
@@ -164,6 +166,8 @@ def update_task(task_id):
                 t.completed_at = None
         if "dueAt" in data:
             t.due_at = _parse_due(data["dueAt"])
+        if "subtasks" in data:
+            t.set_subtasks(data["subtasks"] or [])
         s.commit()
         return jsonify(t.to_dict())
     finally:
