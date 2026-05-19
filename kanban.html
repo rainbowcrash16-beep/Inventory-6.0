@@ -33,6 +33,68 @@ body{
 .hdr h1{font-family:var(--font-head);font-size:22px;letter-spacing:3px}
 .hdr-sub{font-size:10px;color:var(--muted);letter-spacing:1.5px;margin-top:2px}
 
+/* Hamburger toggle */
+.hbg-btn{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0;transition:border-color .15s,background .15s}
+.hbg-btn:hover{border-color:var(--green)}
+.hbg-btn span{display:block;width:18px;height:2px;background:var(--text);border-radius:2px;transition:transform .2s, opacity .2s}
+body.sb-open .hbg-btn span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+body.sb-open .hbg-btn span:nth-child(2){opacity:0}
+body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+
+/* Sidebar */
+.side-overlay{position:fixed;inset:0;background:#000a;z-index:210;opacity:0;pointer-events:none;transition:opacity .2s}
+.side-overlay.open{opacity:1;pointer-events:auto}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:300px;max-width:88vw;background:var(--card);border-right:1px solid var(--border);transform:translateX(-100%);transition:transform .25s ease;display:flex;flex-direction:column;padding:24px 18px calc(18px + env(safe-area-inset-bottom));padding-top:calc(24px + env(safe-area-inset-top));overflow-y:auto;z-index:211}
+.side-overlay.open .sidebar{transform:translateX(0)}
+.sb-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.sb-hdr h2{font-family:var(--font-head);font-size:18px;font-weight:800;letter-spacing:3px}
+.sb-section{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1.5px;margin:18px 0 8px;padding-left:4px}
+.sb-item{display:flex;align-items:flex-start;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px 12px;width:100%;text-align:left;cursor:pointer;color:var(--text);font-family:var(--font-mono);margin-bottom:8px;transition:border-color .15s,background .15s,transform .1s}
+.sb-item:hover{border-color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--panel))}
+.sb-item:active{transform:scale(.98)}
+.sb-item .sb-ico{font-size:18px;line-height:1;width:24px;text-align:center;flex-shrink:0;margin-top:2px}
+.sb-item .sb-title{font-size:13px;font-weight:700;letter-spacing:.5px}
+.sb-item .sb-sub{font-size:10px;color:var(--muted);letter-spacing:.3px;margin-top:2px;line-height:1.35}
+.sb-item-disabled{opacity:.45;cursor:not-allowed}
+.sb-item-disabled:hover{border-color:var(--border);background:var(--panel)}
+
+/* Report table (used by both task export preview and materials report) */
+.rpt-table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.rpt-table th,.rpt-table td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+.rpt-table th{color:var(--muted);font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;position:sticky;top:0;background:var(--card)}
+.rpt-table td.num,.rpt-table th.num{text-align:right;white-space:nowrap}
+.rpt-scroll{max-height:55dvh;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.rpt-summary{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;padding:12px 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.rpt-summary > div b{display:block;font-size:18px;font-variant-numeric:tabular-nums;color:var(--green);font-family:var(--font-head)}
+.rpt-summary > div span{font-size:10px;color:var(--muted);letter-spacing:1px}
+
+/* Import preview */
+.imp-row{display:grid;grid-template-columns:1fr 50px 80px 1fr;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px;align-items:center}
+.imp-row.imp-hdr{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.imp-row.imp-bad{color:var(--red);opacity:.7}
+
+/* Print mode */
+@media print{
+  html,body{overflow:visible !important;background:#fff !important;color:#000 !important;height:auto !important}
+  body{background:#fff !important}
+  .hdr, .fab, .hbg-btn, .icon-btn, .conn-pill, .overlay, .side-overlay, .toast, .kquick, .kcol-add, nav{display:none !important}
+  #board{display:block !important;grid-template-columns:none !important;overflow:visible !important;padding:0 !important}
+  .kcol{break-inside:avoid;page-break-inside:avoid;background:#fff !important;border:1px solid #999 !important;color:#000 !important;margin-bottom:14px}
+  .kcol-hdr{background:#eee !important;border-bottom:1px solid #999 !important}
+  .kcol-title{color:#000 !important}
+  .kcard{background:#fff !important;border:1px solid #666 !important;color:#000 !important;box-shadow:none !important;page-break-inside:avoid;margin-bottom:6px}
+  .kcard-desc, .due-chip, .sub-prog, .mat-prog{color:#000 !important}
+  /* When a report sheet is the target of printing, only render its contents */
+  body.printing-report > #app, body.printing-report > .overlay, body.printing-report > .side-overlay{display:none !important}
+  body.printing-report #reportSheet{display:flex !important;position:static !important;background:transparent !important}
+  body.printing-report #reportSheet .sheet{box-shadow:none !important;max-height:none !important;padding:0 !important;background:#fff !important;color:#000 !important;animation:none !important}
+  body.printing-report .close-btn, body.printing-report .action-row{display:none !important}
+  body.printing-report .rpt-scroll{max-height:none !important;overflow:visible !important;border:none !important}
+  body.printing-report .rpt-table th{background:#fff !important;color:#000 !important;border-bottom:2px solid #000 !important}
+  body.printing-report .rpt-table td, body.printing-report .rpt-summary{color:#000 !important;background:#fff !important;border-color:#999 !important}
+  body.printing-report .rpt-summary b{color:#000 !important}
+}
+
 #board{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding:8px 16px 16px;overflow:hidden;min-height:0}
 @media (max-width:900px){
   #board{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:85%;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:90px}
@@ -231,9 +293,14 @@ body{
 <body>
 <div id="app">
   <div class="hdr">
-    <div>
-      <h1>KANBAN</h1>
-      <div class="hdr-sub">TASKS · PRIORITIZED</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <button class="hbg-btn" id="hbgBtn" aria-label="Menu" title="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div>
+        <h1>KANBAN</h1>
+        <div class="hdr-sub">TASKS · PRIORITIZED</div>
+      </div>
     </div>
     <div class="link-row">
       <a href="index.html">↪ MyStuff</a>
@@ -364,6 +431,87 @@ body{
     <div class="action-row">
       <button class="btn btn-ghost" id="editBtn">EDIT</button>
       <button class="btn btn-red"   id="deleteBtn">DELETE</button>
+    </div>
+  </div>
+</div>
+
+<div class="side-overlay" id="sideOverlay">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-hdr">
+      <h2>MENU</h2>
+      <button class="close-btn" data-close-side aria-label="Close">✕</button>
+    </div>
+
+    <div class="sb-section">REPORTS</div>
+    <button class="sb-item" data-action="export-tasks">
+      <span class="sb-ico">📋</span><div><div class="sb-title">Export tasks (CSV)</div>
+      <div class="sb-sub">Full to-do list, current state</div></div>
+    </button>
+    <button class="sb-item" data-action="export-materials">
+      <span class="sb-ico">💰</span><div><div class="sb-title">Materials report — last 30 days</div>
+      <div class="sb-sub">What you bought & how much</div></div>
+    </button>
+    <button class="sb-item" data-action="print">
+      <span class="sb-ico">🖨️</span><div><div class="sb-title">Print board</div>
+      <div class="sb-sub">Printable view, opens dialog</div></div>
+    </button>
+
+    <div class="sb-section">IMPORT</div>
+    <button class="sb-item" data-action="import-shopping">
+      <span class="sb-ico">🛒</span><div><div class="sb-title">Import shopping list (CSV)</div>
+      <div class="sb-sub">item, qty, unit_cost (header row)</div></div>
+    </button>
+    <button class="sb-item" data-action="import-budget">
+      <span class="sb-ico">💸</span><div><div class="sb-title">Import budget (CSV)</div>
+      <div class="sb-sub">Same format — lands as a Budget task</div></div>
+    </button>
+
+    <div class="sb-section">HOUSEHOLD</div>
+    <button class="sb-item sb-item-disabled" disabled>
+      <span class="sb-ico">👥</span><div><div class="sb-title">Sharing &amp; members</div>
+      <div class="sb-sub">Coming in the next update</div></div>
+    </button>
+  </aside>
+</div>
+
+<div class="overlay" id="importSheet">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <h2 id="importTitle">IMPORT CSV</h2>
+      <button class="close-btn" data-close="importSheet" aria-label="Close">✕</button>
+    </div>
+    <div class="sec-label">FORMAT</div>
+    <div class="detail-desc" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:12px">
+      First row should be a header: <code>item,qty,unit_cost</code> (and optional <code>task</code> to attach to an existing task title). Subsequent rows are your materials.
+    </div>
+    <div class="field" style="margin-top:14px">
+      <label>PICK A CSV FILE</label>
+      <input type="file" accept=".csv,text/csv" id="importFile" class="input" style="padding:10px">
+    </div>
+    <div class="field">
+      <label>TASK NAME (for new task created if items aren't routed)</label>
+      <input id="importTaskName" class="input" maxlength="120" value="Shopping list">
+    </div>
+    <div class="sec-label" id="importPreviewLabel" hidden>PREVIEW</div>
+    <div id="importPreview"></div>
+    <div class="action-row">
+      <button class="btn btn-ghost" data-close="importSheet">CANCEL</button>
+      <button class="btn btn-green" id="importGoBtn" disabled>IMPORT</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="reportSheet">
+  <div class="sheet" id="reportSheetInner">
+    <div class="sheet-hdr">
+      <h2 id="reportTitle">REPORT</h2>
+      <button class="close-btn" data-close="reportSheet" aria-label="Close">✕</button>
+    </div>
+    <div id="reportBody"></div>
+    <div class="action-row">
+      <button class="btn btn-ghost" id="reportDownloadBtn">⬇ DOWNLOAD CSV</button>
+      <button class="btn btn-ghost" id="reportPrintBtn">🖨 PRINT</button>
+      <button class="btn btn-ghost" data-close="reportSheet">CLOSE</button>
     </div>
   </div>
 </div>
@@ -708,6 +856,10 @@ async function toggleListItemInSheet(taskId, kind, itemId){
   const item = list.find(x => x.id === itemId);
   if(!item) return;
   item.done = !item.done;
+  if(kind === 'mat'){
+    if(item.done) item.done_at = new Date().toISOString();
+    else delete item.done_at;
+  }
   renderBoard();
   if(state.mode === 'api'){
     try{
@@ -723,6 +875,326 @@ async function toggleListItemInSheet(taskId, kind, itemId){
     }
   }else{
     saveLocalTasks();
+  }
+}
+
+// ── CSV utilities ──────────────────────────────────────────────────────────
+// Format a single value for CSV: wrap in quotes when it contains a delimiter,
+// quote, or newline; escape embedded quotes by doubling them.
+function csvVal(v){
+  if(v == null) return '';
+  const s = String(v);
+  if(/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toCSV(rows){
+  // rows is array of arrays. First row treated as header by callers.
+  return rows.map(r => r.map(csvVal).join(',')).join('\r\n') + '\r\n';
+}
+// RFC-4180-ish parser: handles quoted fields and embedded quotes/newlines.
+function parseCSV(text){
+  const rows = []; let row = []; let cur = ''; let inQ = false;
+  const s = text.replace(/\r\n/g, '\n');
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(inQ){
+      if(c === '"' && s[i+1] === '"'){ cur += '"'; i++; }
+      else if(c === '"'){ inQ = false; }
+      else { cur += c; }
+    }else{
+      if(c === '"'){ inQ = true; }
+      else if(c === ','){ row.push(cur); cur = ''; }
+      else if(c === '\n'){ row.push(cur); rows.push(row); row = []; cur = ''; }
+      else { cur += c; }
+    }
+  }
+  if(cur.length || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.length && r.some(c => c !== ''));
+}
+function downloadCSV(filename, csvText){
+  const blob = new Blob(['﻿' + csvText], {type: 'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
+}
+
+// ── Reports ────────────────────────────────────────────────────────────────
+const TASK_CSV_HEADERS = [
+  'id','title','status','priority','due_at','description',
+  'subtasks_done','subtasks_total','materials_done','materials_total',
+  'materials_unchecked_cost','materials_total_cost',
+  'created_at','updated_at','completed_at',
+];
+function tasksToCSV(tasks){
+  const rows = [TASK_CSV_HEADERS];
+  for(const t of tasks){
+    const sp = subProgress(t) || {done:0, total:0};
+    const mp = matProgress(t) || {done:0, total:0};
+    const allCost = matSum(t.materials || []);
+    const undoneCost = matSum(t.materials || [], {undoneOnly: true});
+    rows.push([
+      t.id, t.title, t.status, t.priority, t.dueAt || '',
+      t.description || '',
+      sp.done, sp.total, mp.done, mp.total,
+      undoneCost.toFixed(2), allCost.toFixed(2),
+      t.createdAt ? new Date(t.createdAt).toISOString() : '',
+      t.updatedAt ? new Date(t.updatedAt).toISOString() : '',
+      t.completedAt ? new Date(t.completedAt).toISOString() : '',
+    ]);
+  }
+  return toCSV(rows);
+}
+
+// Build the list of checked-off materials over a recent window. Materials
+// without a done_at (i.e. checked off before we started tracking dates) are
+// omitted from time-bounded reports.
+function recentMaterialsReport(days){
+  const cutoff = Date.now() - days * 86400_000;
+  const out = [];
+  for(const t of state.tasks){
+    for(const m of (t.materials || [])){
+      if(!m.done || !m.done_at) continue;
+      const at = Date.parse(m.done_at);
+      if(isNaN(at) || at < cutoff) continue;
+      const qty = Math.max(1, Number(m.qty) || 1);
+      const unit = (m.cost != null && m.cost !== '') ? Number(m.cost) : null;
+      const line = unit != null ? unit * qty : null;
+      out.push({
+        date: m.done_at, task: t.title, item: m.text,
+        qty, unit, line,
+      });
+    }
+  }
+  out.sort((a, b) => (a.date < b.date ? 1 : -1));    // newest first
+  return out;
+}
+function materialsReportCSV(rows){
+  const header = ['date_checked','task','item','qty','unit_cost','line_total'];
+  const out = [header];
+  for(const r of rows){
+    out.push([r.date, r.task, r.item, r.qty,
+              r.unit != null ? r.unit.toFixed(2) : '',
+              r.line != null ? r.line.toFixed(2) : '']);
+  }
+  return toCSV(out);
+}
+
+// ── Report sheet ──────────────────────────────────────────────────────────
+let _lastReportCSV = null;
+let _lastReportFilename = null;
+function openTasksReport(){
+  const tasks = state.tasks.slice().sort((a, b) => {
+    const so = {backlog:1, todo:2, doing:3, done:4};
+    return (so[a.status] - so[b.status]) || sortTasks(a, b);
+  });
+  const csv = tasksToCSV(tasks);
+  _lastReportCSV = csv;
+  _lastReportFilename = `kanban-tasks-${new Date().toISOString().slice(0,10)}.csv`;
+  const totalCost = tasks.reduce((s, t) => s + matSum(t.materials || []), 0);
+  const totalUndone = tasks.reduce((s, t) => s + matSum(t.materials || [], {undoneOnly: true}), 0);
+  const html = `
+    <div class="rpt-summary">
+      <div><b>${tasks.length}</b><span>TASKS</span></div>
+      <div><b>${tasks.filter(t=>t.status==='done').length}</b><span>DONE</span></div>
+      <div><b>$${totalCost.toFixed(2)}</b><span>MATERIALS TOTAL</span></div>
+      <div><b>$${totalUndone.toFixed(2)}</b><span>STILL TO BUY</span></div>
+    </div>
+    <div class="rpt-scroll"><table class="rpt-table">
+      <thead><tr><th>TITLE</th><th>STATUS</th><th>PRIORITY</th><th>DUE</th>
+                 <th class="num">CHECKLIST</th><th class="num">MATERIALS</th><th class="num">$ TOTAL</th></tr></thead>
+      <tbody>${tasks.map(t => {
+        const sp = subProgress(t), mp = matProgress(t);
+        return `<tr>
+          <td>${esc(t.title)}</td>
+          <td>${(COLUMNS.find(c=>c.status===t.status)||{}).label || ''}</td>
+          <td>${PRI_LABEL[t.priority]}</td>
+          <td>${t.dueAt ? esc(fmtDue(t.dueAt)) : '—'}</td>
+          <td class="num">${sp ? `${sp.done}/${sp.total}` : '—'}</td>
+          <td class="num">${mp ? `${mp.done}/${mp.total}` : '—'}</td>
+          <td class="num">${matSum(t.materials||[]) > 0 ? '$' + matSum(t.materials||[]).toFixed(2) : '—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  `;
+  document.getElementById('reportTitle').textContent = 'TASKS REPORT';
+  document.getElementById('reportBody').innerHTML = html;
+  openOverlay('reportSheet');
+}
+function openMaterialsReport(){
+  const rows = recentMaterialsReport(30);
+  const csv = materialsReportCSV(rows);
+  _lastReportCSV = csv;
+  _lastReportFilename = `kanban-materials-30d-${new Date().toISOString().slice(0,10)}.csv`;
+  const grand = rows.reduce((s, r) => s + (r.line || 0), 0);
+  const html = `
+    <div class="rpt-summary">
+      <div><b>${rows.length}</b><span>ITEMS BOUGHT (30D)</span></div>
+      <div><b>$${grand.toFixed(2)}</b><span>TOTAL SPENT</span></div>
+    </div>
+    ${rows.length ? `
+      <div class="rpt-scroll"><table class="rpt-table">
+        <thead><tr><th>DATE</th><th>TASK</th><th>ITEM</th>
+                   <th class="num">QTY</th><th class="num">$ EA</th><th class="num">$ LINE</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${esc(new Date(r.date).toLocaleDateString())}</td>
+          <td>${esc(r.task)}</td>
+          <td>${esc(r.item)}</td>
+          <td class="num">${r.qty}</td>
+          <td class="num">${r.unit != null ? '$' + r.unit.toFixed(2) : '—'}</td>
+          <td class="num">${r.line != null ? '$' + r.line.toFixed(2) : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    ` : `<div class="kcol-empty" style="border-style:dashed">Nothing checked off in the last 30 days. Materials need a check-off date — only newly-checked items show up here. Go check some off!</div>`}
+  `;
+  document.getElementById('reportTitle').textContent = 'MATERIALS — LAST 30 DAYS';
+  document.getElementById('reportBody').innerHTML = html;
+  openOverlay('reportSheet');
+}
+
+// ── Import ────────────────────────────────────────────────────────────────
+let _importParsed = null;
+let _importDefaultName = 'Shopping list';
+function openImportSheet(kind){
+  _importParsed = null;
+  _importDefaultName = (kind === 'budget' ? 'Budget' : 'Shopping list');
+  document.getElementById('importTitle').textContent = (kind === 'budget' ? 'IMPORT BUDGET' : 'IMPORT SHOPPING LIST') + ' (CSV)';
+  document.getElementById('importTaskName').value = _importDefaultName;
+  document.getElementById('importFile').value = '';
+  document.getElementById('importPreview').innerHTML = '';
+  document.getElementById('importPreviewLabel').hidden = true;
+  document.getElementById('importGoBtn').disabled = true;
+  openOverlay('importSheet');
+}
+function previewImport(text){
+  const rows = parseCSV(text);
+  if(!rows.length){
+    document.getElementById('importPreview').innerHTML = '<div class="kcol-empty">CSV is empty.</div>';
+    document.getElementById('importPreviewLabel').hidden = false;
+    document.getElementById('importGoBtn').disabled = true;
+    _importParsed = null;
+    return;
+  }
+  const headerRow = rows[0].map(c => String(c).trim().toLowerCase());
+  const idxItem = headerRow.indexOf('item');
+  const idxQty  = headerRow.indexOf('qty');
+  const idxCost = headerRow.findIndex(h => h === 'unit_cost' || h === 'cost');
+  const idxTask = headerRow.indexOf('task');
+  if(idxItem < 0){
+    document.getElementById('importPreview').innerHTML = '<div class="kcol-empty" style="color:var(--red)">CSV header must include "item".</div>';
+    document.getElementById('importPreviewLabel').hidden = false;
+    document.getElementById('importGoBtn').disabled = true;
+    return;
+  }
+  const items = [];
+  for(let i = 1; i < rows.length; i++){
+    const r = rows[i];
+    const item = (r[idxItem] || '').trim();
+    if(!item) continue;
+    const qtyRaw  = idxQty  >= 0 ? r[idxQty]  : '';
+    const costRaw = idxCost >= 0 ? r[idxCost] : '';
+    const taskRaw = idxTask >= 0 ? (r[idxTask] || '').trim() : '';
+    const qty  = qtyRaw  ? parseInt(qtyRaw, 10) : null;
+    const cost = costRaw ? parseFloat(String(costRaw).replace(/[$,]/g, '')) : null;
+    items.push({
+      text: item,
+      qty:  isNaN(qty)  || qty  == null || qty  < 1 ? null : qty,
+      cost: isNaN(cost) || cost == null || cost < 0 ? null : cost,
+      task: taskRaw || null,
+    });
+  }
+  _importParsed = items;
+  const preview = `
+    <div class="imp-row imp-hdr"><div>ITEM</div><div>QTY</div><div>$ EA</div><div>TASK</div></div>
+    ${items.slice(0, 50).map(it => `
+      <div class="imp-row">
+        <div>${esc(it.text)}</div>
+        <div>${it.qty ?? ''}</div>
+        <div>${it.cost != null ? '$' + it.cost.toFixed(2) : ''}</div>
+        <div>${esc(it.task || '(default task)')}</div>
+      </div>
+    `).join('')}
+    ${items.length > 50 ? `<div class="imp-row imp-hdr">…${items.length - 50} more rows</div>` : ''}
+  `;
+  document.getElementById('importPreview').innerHTML = preview;
+  document.getElementById('importPreviewLabel').hidden = false;
+  document.getElementById('importGoBtn').disabled = items.length === 0;
+}
+async function runImport(){
+  if(!_importParsed || !_importParsed.length) return;
+  const defaultName = (document.getElementById('importTaskName').value || _importDefaultName).trim() || _importDefaultName;
+  // Group by task name. Anything without 'task' goes under defaultName.
+  const groups = new Map();
+  for(const it of _importParsed){
+    const name = it.task || defaultName;
+    if(!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(it);
+  }
+  let createdTasks = 0, updatedTasks = 0, addedMaterials = 0;
+  for(const [name, items] of groups){
+    const newMats = items.map(it => {
+      const m = {id: genSubId(), text: it.text, done: false};
+      if(it.qty  != null) m.qty  = it.qty;
+      if(it.cost != null) m.cost = it.cost;
+      return m;
+    });
+    // Find existing open task by title (case-insensitive)
+    const existing = state.tasks.find(t => t.title.toLowerCase() === name.toLowerCase() && t.status !== 'done');
+    if(existing){
+      const merged = (existing.materials || []).concat(newMats);
+      if(state.mode === 'api'){
+        try{
+          const updated = await apiFetch('/api/tasks/' + encodeURIComponent(existing.id), {
+            method:'PATCH', body: JSON.stringify({materials: merged}),
+          });
+          Object.assign(existing, updated);
+        }catch(err){ toast('Append failed: '+err.message, true); return; }
+      }else{
+        existing.materials = merged; saveLocalTasks();
+      }
+      updatedTasks++; addedMaterials += newMats.length;
+    }else{
+      const payload = {title: name, status:'backlog', priority:'medium', materials: newMats};
+      if(state.mode === 'api'){
+        try{
+          const saved = await apiFetch('/api/tasks', {method:'POST', body: JSON.stringify(payload)});
+          state.tasks.push(saved);
+        }catch(err){ toast('Create failed: '+err.message, true); return; }
+      }else{
+        state.tasks.push({
+          id: genId(), title: name, description:'', priority:'medium', status:'backlog',
+          dueAt: null, subtasks: [], materials: newMats,
+          createdAt: Date.now(), updatedAt: Date.now(), completedAt: null,
+        });
+        saveLocalTasks();
+      }
+      createdTasks++; addedMaterials += newMats.length;
+    }
+  }
+  renderBoard();
+  refreshShopCount();
+  closeOverlay('importSheet');
+  toast(`Imported ${addedMaterials} item(s) into ${createdTasks} new + ${updatedTasks} existing task(s)`);
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────
+function openSidebar(){
+  document.body.classList.add('sb-open');
+  document.getElementById('sideOverlay').classList.add('open');
+}
+function closeSidebar(){
+  document.body.classList.remove('sb-open');
+  document.getElementById('sideOverlay').classList.remove('open');
+}
+function handleSidebarAction(action){
+  closeSidebar();
+  switch(action){
+    case 'export-tasks':     openTasksReport();          break;
+    case 'export-materials': openMaterialsReport();       break;
+    case 'print':            window.print();              break;
+    case 'import-shopping':  openImportSheet('shopping'); break;
+    case 'import-budget':    openImportSheet('budget');   break;
   }
 }
 
@@ -803,6 +1275,7 @@ async function checkOffShoppingItem(taskId, matId){
   const m = t.materials.find(x => x.id === matId);
   if(!m) return;
   m.done = true;
+  m.done_at = new Date().toISOString();
   renderBoard();
   refreshShopCount();
   if(state.mode === 'api'){
@@ -937,8 +1410,9 @@ function openEditSheet(opts){
   const cloneSub = arr => arr.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}));
   const cloneMat = arr => arr.map(s => {
     const r = {id: s.id || genSubId(), text: s.text, done: !!s.done};
-    if(s.qty != null)  r.qty  = s.qty;
-    if(s.cost != null) r.cost = s.cost;
+    if(s.qty != null)   r.qty     = s.qty;
+    if(s.cost != null)  r.cost    = s.cost;
+    if(s.done_at)       r.done_at = s.done_at;
     return r;
   });
   state.formSubtasks  = existing && Array.isArray(existing.subtasks)  ? cloneSub(existing.subtasks)  : [];
@@ -1026,6 +1500,10 @@ async function saveFromForm(){
       const r = {id: s.id, text: (s.text || '').trim(), done: !!s.done};
       if(s.qty  != null && s.qty  !== '') r.qty  = s.qty;
       if(s.cost != null && s.cost !== '') r.cost = s.cost;
+      // Preserve a previously-stamped check-off date; if a user manually
+      // toggles 'done' in the form, mint one now so reports include it.
+      if(s.done && s.done_at) r.done_at = s.done_at;
+      else if(s.done && !s.done_at) r.done_at = new Date().toISOString();
       return r;
     })
     .filter(s => s.text);
@@ -1456,10 +1934,42 @@ async function init(){
     if(btn) handleSuggestionAction(btn.dataset.sugAction, btn.dataset.sug);
   });
 
+  // Sidebar (hamburger menu)
+  document.getElementById('hbgBtn').addEventListener('click', openSidebar);
+  document.getElementById('sideOverlay').addEventListener('click', e => {
+    if(e.target.id === 'sideOverlay' || e.target.hasAttribute('data-close-side')) closeSidebar();
+  });
+  document.querySelectorAll('.sb-item[data-action]').forEach(b => {
+    b.addEventListener('click', () => handleSidebarAction(b.dataset.action));
+  });
+
+  // Import sheet — file pick + run
+  document.getElementById('importFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload  = () => previewImport(reader.result);
+    reader.onerror = () => toast('Could not read file', true);
+    reader.readAsText(f);
+  });
+  document.getElementById('importGoBtn').addEventListener('click', runImport);
+
+  // Report sheet — download + print
+  document.getElementById('reportDownloadBtn').addEventListener('click', () => {
+    if(_lastReportCSV && _lastReportFilename) downloadCSV(_lastReportFilename, _lastReportCSV);
+  });
+  document.getElementById('reportPrintBtn').addEventListener('click', () => {
+    document.body.classList.add('printing-report');
+    window.addEventListener('afterprint',
+      () => document.body.classList.remove('printing-report'), {once: true});
+    setTimeout(() => window.print(), 50);
+  });
+
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
-    // ESC always closes overlays
+    // ESC closes overlays / sidebar
     if(e.key === 'Escape'){
+      if(document.body.classList.contains('sb-open')) closeSidebar();
       document.querySelectorAll('.overlay.open').forEach(o => closeOverlay(o.id));
       return;
     }

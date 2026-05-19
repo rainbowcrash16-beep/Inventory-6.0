@@ -113,6 +113,10 @@ class Task(Base):
                         c = None
                     if c is not None and c < 0: c = 0.0
                     if c is not None: row["cost"] = round(c, 2)
+                elif k == "done_at":
+                    v = s.get("done_at")
+                    if v:
+                        row["done_at"] = str(v)[:40]
                 else:
                     if k in s and s[k] is not None:
                         row[k] = s[k]
@@ -122,7 +126,7 @@ class Task(Base):
     def get_subtasks(self):  return self._get_list(self.subtasks)
     def get_materials(self): return self._get_list(self.materials)
     def set_subtasks(self, items):  self.subtasks  = self._clean_list(items)
-    def set_materials(self, items): self.materials = self._clean_list(items, extra=("qty", "cost"))
+    def set_materials(self, items): self.materials = self._clean_list(items, extra=("qty", "cost", "done_at"))
 
     def to_dict(self):
         return {
