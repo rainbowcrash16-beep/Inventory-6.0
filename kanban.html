@@ -113,6 +113,24 @@ body{
 .sub-add-row input{flex:1;background:var(--panel);border:1px dashed var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:border-color .15s,border-style .15s}
 .sub-add-row input:focus{border-color:var(--green);border-style:solid}
 
+/* Materials editor — small qty + cost inputs on each row */
+.sub-row .mat-qty,.sub-row .mat-cost{background:var(--card);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;border-radius:6px;padding:5px 7px;outline:none;transition:border-color .15s}
+.sub-row .mat-qty{width:50px;text-align:center}
+.sub-row .mat-cost{width:74px;text-align:right}
+.sub-row .mat-qty:focus,.sub-row .mat-cost:focus{border-color:var(--purple)}
+.mat-cost-wrap{position:relative;display:inline-flex;align-items:center}
+.mat-cost-wrap::before{content:"$";position:absolute;left:6px;color:var(--muted);font-size:11px;pointer-events:none}
+.sub-row .mat-cost{padding-left:14px;text-align:left}
+
+/* Shopping list sheet — task grouping + total bar */
+.shop-task{margin-bottom:18px}
+.shop-task-title{font-family:var(--font-head);font-size:12px;font-weight:800;letter-spacing:2px;color:var(--purple);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.shop-task-meta{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:1px}
+.shop-row-meta{font-size:11px;color:var(--muted);margin-left:auto;flex-shrink:0;font-variant-numeric:tabular-nums}
+.shop-row-meta b{color:var(--text);font-weight:600}
+.shop-total{display:flex;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:14px;font-size:13px}
+.shop-total .st-grand{color:var(--purple);font-weight:800;font-variant-numeric:tabular-nums;font-size:16px}
+
 /* Inline markdown rendering inside descriptions */
 .md{line-height:1.5}
 .md p{margin:0 0 6px}
@@ -216,6 +234,9 @@ body{
     </div>
     <div class="link-row">
       <a href="index.html">↪ MyStuff</a>
+      <button class="icon-btn" id="shoppingBtn" title="Materials to buy">
+        <span>🛒</span> SHOPPING<span class="badge-count" id="shopCount" hidden>0</span>
+      </button>
       <button class="icon-btn" id="suggestionsBtn" title="Email suggestions" hidden>
         <span>✉</span> SUGGESTIONS<span class="badge-count" id="sugCount" hidden>0</span>
       </button>
@@ -344,6 +365,24 @@ body{
   </div>
 </div>
 
+<div class="overlay" id="shopSheet">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <h2>SHOPPING LIST</h2>
+      <button class="close-btn" data-close="shopSheet" aria-label="Close">✕</button>
+    </div>
+    <div class="sec-label">UNCHECKED MATERIALS ACROSS ALL TASKS</div>
+    <div id="shopList"></div>
+    <div class="shop-total" id="shopTotalBar" hidden>
+      <span id="shopTotalCount"></span>
+      <span class="st-grand" id="shopTotalCost"></span>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-ghost btn-full" data-close="shopSheet">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="sugSheet">
   <div class="sheet">
     <div class="sheet-hdr">
@@ -400,6 +439,29 @@ function listProgress(list){
 }
 const subProgress = t => listProgress(t.subtasks);
 const matProgress = t => listProgress(t.materials);
+
+// Format a material's qty/cost suffix, e.g. " × 4 — $11.00". Returns '' when
+// both are missing so leftover separators don't appear.
+function matMeta(m){
+  const bits = [];
+  if(m.qty != null && m.qty !== '' && m.qty !== 1) bits.push(`× ${m.qty}`);
+  if(m.cost != null && m.cost !== ''){
+    const lineCost = Number(m.cost) * Math.max(1, Number(m.qty) || 1);
+    bits.push(`$${lineCost.toFixed(2)}`);
+  }
+  return bits.length ? ' — ' + bits.join(' · ') : '';
+}
+
+// Sum of cost*qty across an array of materials (unchecked-only by default).
+function matSum(materials, opts){
+  let total = 0;
+  for(const m of (materials || [])){
+    if(opts && opts.undoneOnly && m.done) continue;
+    if(m.cost == null || m.cost === '') continue;
+    total += Number(m.cost) * Math.max(1, Number(m.qty) || 1);
+  }
+  return total;
+}
 
 function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -596,6 +658,7 @@ function renderBoard(){
       : `<div class="kcol-empty">Drop tasks here</div>`;
     countEl.textContent = cards.length;
   }
+  refreshShopCount();
 }
 
 function findTask(id){
@@ -650,6 +713,96 @@ async function toggleListItemInSheet(taskId, kind, itemId){
     }catch(err){
       item.done = !item.done;     // revert
       renderBoard();
+      toast('Update failed: ' + err.message, true);
+    }
+  }else{
+    saveLocalTasks();
+  }
+}
+
+// ── Shopping list (aggregate of unchecked materials across all tasks) ──────
+function buildShopping(){
+  const groups = [];
+  for(const t of state.tasks){
+    const mats = (Array.isArray(t.materials) ? t.materials : []).filter(m => !m.done);
+    if(!mats.length) continue;
+    groups.push({task: t, mats});
+  }
+  // sort: open tasks first (anything other than 'done'), then by status order
+  const order = {backlog:1, todo:2, doing:3, done:4};
+  groups.sort((a, b) => (order[a.task.status] || 9) - (order[b.task.status] || 9));
+  let count = 0, total = 0;
+  for(const g of groups){
+    for(const m of g.mats){
+      count++;
+      total += matSum([m]);
+    }
+  }
+  return {groups, count, total};
+}
+
+function refreshShopCount(){
+  const {count} = buildShopping();
+  const el = document.getElementById('shopCount');
+  if(count > 0){ el.textContent = count; el.hidden = false; }
+  else { el.hidden = true; }
+}
+
+function openShopSheet(){
+  const {groups, count, total} = buildShopping();
+  const list = document.getElementById('shopList');
+  if(!groups.length){
+    list.innerHTML = `<div class="kcol-empty" style="border-style:dashed">Nothing to shop for. Add materials to a task to see them here.</div>`;
+    document.getElementById('shopTotalBar').hidden = true;
+  }else{
+    const colLabel = s => (COLUMNS.find(c => c.status === s) || {}).label || s.toUpperCase();
+    list.innerHTML = groups.map(({task, mats}) => `
+      <div class="shop-task">
+        <div class="shop-task-title">
+          <span>${esc(task.title)}</span>
+          <span class="shop-task-meta">${colLabel(task.status)}</span>
+        </div>
+        ${mats.map(m => `
+          <div class="sub-row" data-shop="${task.id}:${esc(m.id)}">
+            <input type="checkbox" class="sub-check" data-shop-toggle="${task.id}:${esc(m.id)}">
+            <div class="sub-input" style="cursor:default">${esc(m.text)}</div>
+            ${(m.qty != null && m.qty !== '') || (m.cost != null && m.cost !== '') ? `
+              <span class="shop-row-meta">
+                ${m.qty != null && m.qty !== '' ? `<b>× ${esc(String(m.qty))}</b>` : ''}
+                ${m.cost != null && m.cost !== '' ? `&nbsp;&nbsp;$${(Number(m.cost) * Math.max(1, Number(m.qty) || 1)).toFixed(2)}` : ''}
+              </span>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+    document.getElementById('shopTotalCount').textContent = `${count} item${count !== 1 ? 's' : ''}`;
+    document.getElementById('shopTotalCost').textContent  = total > 0 ? `$${total.toFixed(2)}` : '';
+    document.getElementById('shopTotalBar').hidden = false;
+  }
+  openOverlay('shopSheet');
+}
+
+async function checkOffShoppingItem(taskId, matId){
+  const t = findTask(taskId);
+  if(!t || !Array.isArray(t.materials)) return;
+  const m = t.materials.find(x => x.id === matId);
+  if(!m) return;
+  m.done = true;
+  renderBoard();
+  refreshShopCount();
+  if(state.mode === 'api'){
+    try{
+      const updated = await apiFetch('/api/tasks/' + encodeURIComponent(taskId), {
+        method: 'PATCH', body: JSON.stringify({materials: t.materials}),
+      });
+      Object.assign(t, updated);
+      renderBoard();
+      refreshShopCount();
+    }catch(err){
+      m.done = false;       // revert
+      renderBoard();
+      refreshShopCount();
       toast('Update failed: ' + err.message, true);
     }
   }else{
@@ -767,9 +920,15 @@ function openEditSheet(opts){
   state.formPriority = existing ? existing.priority : 'medium';
   state.formStatus   = existing ? existing.status   : (opts.status || 'backlog');
   // deep copy so editing the form doesn't mutate the live task until SAVE
-  const cloneList = arr => arr.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}));
-  state.formSubtasks  = existing && Array.isArray(existing.subtasks)  ? cloneList(existing.subtasks)  : [];
-  state.formMaterials = existing && Array.isArray(existing.materials) ? cloneList(existing.materials) : [];
+  const cloneSub = arr => arr.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}));
+  const cloneMat = arr => arr.map(s => {
+    const r = {id: s.id || genSubId(), text: s.text, done: !!s.done};
+    if(s.qty != null)  r.qty  = s.qty;
+    if(s.cost != null) r.cost = s.cost;
+    return r;
+  });
+  state.formSubtasks  = existing && Array.isArray(existing.subtasks)  ? cloneSub(existing.subtasks)  : [];
+  state.formMaterials = existing && Array.isArray(existing.materials) ? cloneMat(existing.materials) : [];
   renderFormSubs();
   renderFormMats();
   document.getElementById('f-sub-new').value = '';
@@ -807,13 +966,18 @@ function renderFormList(kind){
   const wrap = document.getElementById(kind === 'sub' ? 'f-subs' : 'f-mats');
   const list = kind === 'sub' ? state.formSubtasks : state.formMaterials;
   if(!list.length){ wrap.innerHTML = ''; return; }
-  wrap.innerHTML = list.map((s, i) => `
-    <div class="sub-row ${s.done ? 'sub-done' : ''}" data-i="${i}">
+  wrap.innerHTML = list.map((s, i) => {
+    const extras = kind === 'mat' ? `
+      <input class="mat-qty"  data-mat-qty="${i}"  type="number" min="1"  step="1"    inputmode="numeric" value="${s.qty  ?? ''}" placeholder="qty">
+      <span class="mat-cost-wrap"><input class="mat-cost" data-mat-cost="${i}" type="number" min="0" step="0.01" inputmode="decimal" value="${s.cost ?? ''}" placeholder="0.00"></span>
+    ` : '';
+    return `<div class="sub-row ${s.done ? 'sub-done' : ''}" data-i="${i}">
       <input type="checkbox" class="sub-check" data-${kind}-toggle="${i}" ${s.done ? 'checked' : ''}>
       <input class="sub-input" data-${kind}-edit="${i}" value="${esc(s.text)}" maxlength="200">
+      ${extras}
       <button type="button" class="sub-del" data-${kind}-del="${i}" aria-label="Delete">×</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 const renderFormSubs = () => renderFormList('sub');
 const renderFormMats = () => renderFormList('mat');
@@ -840,11 +1004,17 @@ async function saveFromForm(){
     const i = +el.dataset.matEdit;
     if(state.formMaterials[i]) state.formMaterials[i].text = el.value;
   });
-  const cleanList = arr => arr
+  const subtasks  = state.formSubtasks
     .map(s => ({id: s.id, text: (s.text || '').trim(), done: !!s.done}))
     .filter(s => s.text);
-  const subtasks  = cleanList(state.formSubtasks);
-  const materials = cleanList(state.formMaterials);
+  const materials = state.formMaterials
+    .map(s => {
+      const r = {id: s.id, text: (s.text || '').trim(), done: !!s.done};
+      if(s.qty  != null && s.qty  !== '') r.qty  = s.qty;
+      if(s.cost != null && s.cost !== '') r.cost = s.cost;
+      return r;
+    })
+    .filter(s => s.text);
   const now = Date.now();
 
   if(state.mode === 'api'){
@@ -916,16 +1086,19 @@ function openCardSheet(id){
   const colLabel = COLUMNS.find(c => c.status === t.status).label;
   const body = document.getElementById('cardBody');
   const listHTML = (kind, label) => {
-    const list = Array.isArray(t[kind === 'sub' ? 'subtasks' : 'materials']) ? t[kind === 'sub' ? 'subtasks' : 'materials'] : [];
+    const field = kind === 'sub' ? 'subtasks' : 'materials';
+    const list = Array.isArray(t[field]) ? t[field] : [];
     if(!list.length) return '';
     const done = list.filter(s => s.done).length;
+    const sum = kind === 'mat' ? matSum(list) : 0;
+    const subtitle = `${done}/${list.length}` + (sum > 0 ? ` · $${sum.toFixed(2)}` : '');
     return `
-      <div class="sec-label">${label} · ${done}/${list.length}</div>
+      <div class="sec-label">${label} · ${subtitle}</div>
       <div class="sub-list">
         ${list.map(s => `
           <div class="sub-row ${s.done ? 'sub-done' : ''}">
             <input type="checkbox" class="sub-check" data-sheet-toggle="${kind}:${esc(s.id)}" ${s.done ? 'checked' : ''}>
-            <div class="sub-input" style="cursor:default">${esc(s.text)}</div>
+            <div class="sub-input" style="cursor:default">${esc(s.text)}${kind === 'mat' ? esc(matMeta(s)) : ''}</div>
           </div>
         `).join('')}
       </div>`;
@@ -1091,6 +1264,7 @@ async function init(){
   refreshConnUI();
   state.tasks = await loadTasks();
   renderBoard();
+  refreshShopCount();
   if(state.mode === 'api' && state.connected){
     refreshSuggestionCount();
   }
@@ -1188,6 +1362,26 @@ async function init(){
       if(ed){
         const i = +ed.dataset[kind + 'Edit'];
         if(list()[i]) list()[i].text = ed.value;
+        return;
+      }
+      if(kind === 'mat'){
+        const q = e.target.closest('[data-mat-qty]');
+        if(q){
+          const i = +q.dataset.matQty;
+          if(list()[i]){
+            const v = parseInt(q.value, 10);
+            list()[i].qty = isNaN(v) ? null : Math.max(1, Math.min(9999, v));
+          }
+          return;
+        }
+        const c = e.target.closest('[data-mat-cost]');
+        if(c){
+          const i = +c.dataset.matCost;
+          if(list()[i]){
+            const v = parseFloat(c.value);
+            list()[i].cost = isNaN(v) ? null : Math.max(0, v);
+          }
+        }
       }
     });
   }
@@ -1231,10 +1425,18 @@ async function init(){
     }
   });
 
-  // Connection + sync + suggestions
+  // Connection + sync + suggestions + shopping
   document.getElementById('connPill').addEventListener('click', handleConnPillClick);
   document.getElementById('syncBtn').addEventListener('click', runSync);
   document.getElementById('suggestionsBtn').addEventListener('click', openSuggestions);
+  document.getElementById('shoppingBtn').addEventListener('click', openShopSheet);
+  document.getElementById('shopList').addEventListener('click', e => {
+    const cb = e.target.closest('[data-shop-toggle]');
+    if(!cb) return;
+    const [tid, mid] = cb.dataset.shopToggle.split(':');
+    cb.disabled = true;
+    checkOffShoppingItem(tid, mid).then(() => openShopSheet());
+  });
   document.getElementById('sugList').addEventListener('click', e => {
     const btn = e.target.closest('[data-sug-action]');
     if(btn) handleSuggestionAction(btn.dataset.sugAction, btn.dataset.sug);

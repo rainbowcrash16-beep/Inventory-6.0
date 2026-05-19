@@ -83,7 +83,7 @@ class Task(Base):
         except (ValueError, TypeError):
             return []
 
-    def _clean_list(self, items):
+    def _clean_list(self, items, extra=()):
         if items is None:
             return None
         clean = []
@@ -94,14 +94,35 @@ class Task(Base):
             txt = str(s.get("text") or "").strip()
             if not txt:
                 continue
-            done = bool(s.get("done"))
-            clean.append({"id": sid, "text": txt[:200], "done": done})
+            row = {"id": sid, "text": txt[:200], "done": bool(s.get("done"))}
+            for k in extra:
+                if k == "qty":
+                    q = s.get("qty")
+                    try:
+                        q = int(q) if q not in (None, "", False) else None
+                    except (TypeError, ValueError):
+                        q = None
+                    if q is not None and q < 1: q = 1
+                    if q is not None and q > 9999: q = 9999
+                    if q is not None: row["qty"] = q
+                elif k == "cost":
+                    c = s.get("cost")
+                    try:
+                        c = float(c) if c not in (None, "", False) else None
+                    except (TypeError, ValueError):
+                        c = None
+                    if c is not None and c < 0: c = 0.0
+                    if c is not None: row["cost"] = round(c, 2)
+                else:
+                    if k in s and s[k] is not None:
+                        row[k] = s[k]
+            clean.append(row)
         return json.dumps(clean) if clean else None
 
     def get_subtasks(self):  return self._get_list(self.subtasks)
     def get_materials(self): return self._get_list(self.materials)
     def set_subtasks(self, items):  self.subtasks  = self._clean_list(items)
-    def set_materials(self, items): self.materials = self._clean_list(items)
+    def set_materials(self, items): self.materials = self._clean_list(items, extra=("qty", "cost"))
 
     def to_dict(self):
         return {
