@@ -117,8 +117,30 @@ html,body{height:100%;background:var(--dark);color:var(--text);font-family:var(-
 
 .move-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 
-.link-row{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);letter-spacing:1px}
+.link-row{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--muted);letter-spacing:1px;flex-wrap:wrap;justify-content:flex-end}
 .link-row a{color:var(--green);text-decoration:none}
+
+.conn-pill{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--muted);cursor:pointer;font-family:var(--font-mono);transition:border-color .15s}
+.conn-pill:hover{border-color:var(--green)}
+.conn-pill.connected{color:var(--green);border-color:var(--green)}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.conn-pill.connected .conn-dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+
+.icon-btn{background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:5px 10px;color:var(--muted);cursor:pointer;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.8px;display:inline-flex;align-items:center;gap:6px;position:relative}
+.icon-btn:hover{border-color:var(--green);color:var(--green)}
+.icon-btn[disabled]{opacity:.4;cursor:not-allowed}
+.icon-btn .pulse{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.badge-count{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:8px;font-weight:800;border-radius:8px;min-width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px}
+
+.sug-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px}
+.sug-subject{font-size:13px;font-weight:600;line-height:1.35;margin-bottom:4px;word-break:break-word}
+.sug-from{font-size:10px;color:var(--muted);letter-spacing:.5px;margin-bottom:6px;word-break:break-word}
+.sug-snippet{font-size:11px;color:var(--text);opacity:.7;line-height:1.4;margin-bottom:10px;word-break:break-word}
+.sug-actions{display:flex;gap:8px}
+
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 16px;font-size:12px;color:var(--text);z-index:400;box-shadow:0 8px 24px #000a;animation:fadeUp .2s ease}
+.toast.err{border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
@@ -128,7 +150,18 @@ html,body{height:100%;background:var(--dark);color:var(--text);font-family:var(-
       <h1>KANBAN</h1>
       <div class="hdr-sub">TASKS · PRIORITIZED</div>
     </div>
-    <div class="link-row"><a href="index.html">↪ MyStuff</a></div>
+    <div class="link-row">
+      <a href="index.html">↪ MyStuff</a>
+      <button class="icon-btn" id="suggestionsBtn" title="Email suggestions" hidden>
+        <span>✉</span> SUGGESTIONS<span class="badge-count" id="sugCount" hidden>0</span>
+      </button>
+      <button class="icon-btn" id="syncBtn" title="Sync with Google" hidden>
+        <span>↻</span> SYNC
+      </button>
+      <button class="conn-pill" id="connPill" title="Connect your Google account">
+        <span class="conn-dot"></span><span id="connLabel">SIGN IN</span>
+      </button>
+    </div>
   </div>
 
   <div id="board">
@@ -189,6 +222,10 @@ html,body{height:100%;background:var(--dark);color:var(--text);font-family:var(-
       </div>
     </div>
     <div class="field">
+      <label>DUE DATE</label>
+      <input class="input" id="f-due" type="datetime-local">
+    </div>
+    <div class="field">
       <label>COLUMN</label>
       <div class="status-row" id="f-status">
         <button type="button" class="status-pill" data-status="backlog">BACKLOG</button>
@@ -225,6 +262,20 @@ html,body{height:100%;background:var(--dark);color:var(--text);font-family:var(-
   </div>
 </div>
 
+<div class="overlay" id="sugSheet">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <h2>EMAIL SUGGESTIONS</h2>
+      <button class="close-btn" data-close="sugSheet" aria-label="Close">✕</button>
+    </div>
+    <div class="sec-label">FROM YOUR INBOX</div>
+    <div id="sugList"></div>
+    <div class="action-row">
+      <button class="btn btn-ghost btn-full" data-close="sugSheet">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -240,11 +291,17 @@ const PRI_LABEL = {urgent:'URGENT', high:'HIGH', medium:'MEDIUM', low:'LOW'};
 const PRI_BADGE = {urgent:'badge-red', high:'badge-amber', medium:'badge-blue', low:'badge-muted'};
 
 const state = {
+  mode: 'local',          // 'api' if connected to backend, else 'local' (localStorage)
+  apiBase: '',            // populated at init when api mode is available
+  connected: false,       // Google account connected
+  userEmail: null,
   tasks: [],
+  suggestions: [],
   editingId: null,
   sheetCardId: null,
   formPriority: 'medium',
   formStatus: 'backlog',
+  formDueAt: '',          // datetime-local string
 };
 
 function esc(s){
@@ -256,7 +313,50 @@ function genId(){
   return 'k_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
 }
 
-function loadTasks(){
+// ── Storage: API mode (calls Flask) or local mode (localStorage) ─────────────
+async function apiFetch(path, opts){
+  const res = await fetch(state.apiBase + path, Object.assign({
+    headers: {'Content-Type':'application/json'},
+    credentials: 'same-origin',
+  }, opts || {}));
+  if(!res.ok){
+    let msg = res.status + ' ' + res.statusText;
+    try{ const j = await res.json(); if(j.error) msg = j.error; }catch(_){}
+    throw new Error(msg);
+  }
+  if(res.status === 204) return null;
+  return res.json();
+}
+
+async function detectMode(){
+  // If we're served from a Flask app, /api/me will respond. From file:// or
+  // GitHub Pages, the request fails and we fall back to local mode.
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch('/api/me', {credentials:'same-origin', signal: ctrl.signal});
+    clearTimeout(t);
+    if(!res.ok) throw new Error('api unavailable');
+    const data = await res.json();
+    state.mode = 'api';
+    state.connected = !!data.connected;
+    state.userEmail = data.user && data.user.email || null;
+  }catch(_){
+    state.mode = 'local';
+    state.connected = false;
+  }
+}
+
+async function loadTasks(){
+  if(state.mode === 'api'){
+    try{
+      return await apiFetch('/api/tasks');
+    }catch(err){
+      toast('Could not load tasks: ' + err.message, true);
+      return [];
+    }
+  }
+  // local mode
   const raw = localStorage.getItem(STORAGE_KEY);
   if(!raw) return [];
   try{
@@ -266,12 +366,25 @@ function loadTasks(){
     const backup = STORAGE_KEY + '_corrupt_' + Date.now();
     try{ localStorage.setItem(backup, raw); }catch(_){}
     localStorage.removeItem(STORAGE_KEY);
-    console.warn('Corrupt kanban data backed up to', backup);
     return [];
   }
 }
-function saveTasks(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+
+function saveLocalTasks(){
+  if(state.mode === 'local'){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+  }
+}
+
+let toastTimer = null;
+function toast(msg, isErr){
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const el = document.createElement('div');
+  el.className = 'toast' + (isErr ? ' err' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 2800);
 }
 
 function sortTasks(a, b){
@@ -279,8 +392,21 @@ function sortTasks(a, b){
   return p || (a.createdAt - b.createdAt);
 }
 
+function fmtDue(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const opts = sameDay
+    ? {hour:'numeric', minute:'2-digit'}
+    : {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'};
+  return d.toLocaleString(undefined, opts);
+}
+
 function cardHTML(t){
   const showBadge = t.priority === 'urgent' || t.priority === 'high';
+  const due = t.dueAt ? fmtDue(t.dueAt) : '';
   return `<div class="kcard" data-id="${t.id}">
     <div class="kcard-stripe p-${t.priority}"></div>
     <div class="kcard-top">
@@ -288,6 +414,7 @@ function cardHTML(t){
       ${showBadge ? `<span class="badge ${PRI_BADGE[t.priority]}">${PRI_LABEL[t.priority]}</span>` : ''}
     </div>
     ${t.description ? `<div class="kcard-desc">${esc(t.description)}</div>` : ''}
+    ${due ? `<div class="kcard-desc" style="color:var(--amber);margin-top:6px">⏰ ${esc(due)}</div>` : ''}
   </div>`;
 }
 
@@ -308,21 +435,50 @@ function findTask(id){
   return state.tasks.find(t => t.id === id);
 }
 
-function moveTask(id, toStatus){
+async function moveTask(id, toStatus){
   const t = findTask(id);
   if(!t || t.status === toStatus) return;
+  // optimistic update
+  const prevStatus = t.status, prevCompleted = t.completedAt;
   t.status = toStatus;
   t.updatedAt = Date.now();
   if(toStatus === 'done') t.completedAt = Date.now();
   else if(t.completedAt) t.completedAt = null;
-  saveTasks();
   renderBoard();
+  if(state.mode === 'api'){
+    try{
+      const updated = await apiFetch('/api/tasks/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        body: JSON.stringify({status: toStatus}),
+      });
+      Object.assign(t, updated);
+      renderBoard();
+    }catch(err){
+      // revert on failure
+      t.status = prevStatus; t.completedAt = prevCompleted;
+      renderBoard();
+      toast('Move failed: ' + err.message, true);
+    }
+  }else{
+    saveLocalTasks();
+  }
 }
 
-function deleteTask(id){
+async function deleteTask(id){
+  const prev = state.tasks.slice();
   state.tasks = state.tasks.filter(t => t.id !== id);
-  saveTasks();
   renderBoard();
+  if(state.mode === 'api'){
+    try{
+      await apiFetch('/api/tasks/' + encodeURIComponent(id), {method:'DELETE'});
+    }catch(err){
+      state.tasks = prev;
+      renderBoard();
+      toast('Delete failed: ' + err.message, true);
+    }
+  }else{
+    saveLocalTasks();
+  }
 }
 
 // ── Pointer-events drag controller ───────────────────────────────────────────
@@ -394,6 +550,16 @@ function openEditSheet(opts){
   document.getElementById('f-desc').value  = existing ? (existing.description || '') : '';
   state.formPriority = existing ? existing.priority : 'medium';
   state.formStatus   = existing ? existing.status   : (opts.status || 'backlog');
+  // Due date — datetime-local wants 'YYYY-MM-DDTHH:MM' in local time
+  let dueLocal = '';
+  if(existing && existing.dueAt){
+    const d = new Date(existing.dueAt);
+    if(!isNaN(d)){
+      const pad = n => String(n).padStart(2,'0');
+      dueLocal = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+  document.getElementById('f-due').value = dueLocal;
   syncPriPills();
   syncStatusPills();
   openOverlay('editSheet');
@@ -409,7 +575,7 @@ function syncStatusPills(){
     p.classList.toggle('sel', p.dataset.status === state.formStatus);
   });
 }
-function saveFromForm(){
+async function saveFromForm(){
   const titleEl = document.getElementById('f-title');
   const title = titleEl.value.trim();
   if(!title){
@@ -419,7 +585,47 @@ function saveFromForm(){
     return;
   }
   const desc = document.getElementById('f-desc').value.trim();
+  const dueRaw = document.getElementById('f-due').value;     // local datetime string or ''
+  // Convert local datetime-local to ISO for the API
+  const dueAt = dueRaw ? new Date(dueRaw).toISOString() : null;
   const now = Date.now();
+
+  if(state.mode === 'api'){
+    try{
+      let saved;
+      if(state.editingId){
+        saved = await apiFetch('/api/tasks/' + encodeURIComponent(state.editingId), {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title, description: desc,
+            priority: state.formPriority,
+            status: state.formStatus,
+            dueAt,
+          }),
+        });
+        const idx = state.tasks.findIndex(t => t.id === state.editingId);
+        if(idx >= 0) state.tasks[idx] = saved;
+      }else{
+        saved = await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: JSON.stringify({
+            title, description: desc,
+            priority: state.formPriority,
+            status: state.formStatus,
+            dueAt,
+          }),
+        });
+        state.tasks.push(saved);
+      }
+      renderBoard();
+      closeOverlay('editSheet');
+    }catch(err){
+      toast('Save failed: ' + err.message, true);
+    }
+    return;
+  }
+
+  // local mode
   if(state.editingId){
     const t = findTask(state.editingId);
     if(!t) return;
@@ -428,6 +634,7 @@ function saveFromForm(){
     t.description = desc;
     t.priority = state.formPriority;
     t.status = state.formStatus;
+    t.dueAt = dueAt;
     t.updatedAt = now;
     if(t.status === 'done' && !wasDone) t.completedAt = now;
     if(t.status !== 'done') t.completedAt = null;
@@ -437,11 +644,12 @@ function saveFromForm(){
       title, description: desc,
       priority: state.formPriority,
       status: state.formStatus,
+      dueAt,
       createdAt: now, updatedAt: now,
       completedAt: state.formStatus === 'done' ? now : null,
     });
   }
-  saveTasks();
+  saveLocalTasks();
   renderBoard();
   closeOverlay('editSheet');
 }
@@ -458,6 +666,7 @@ function openCardSheet(id){
     <div class="detail-row"><span class="dl">PRIORITY</span>
       <span class="dv"><span class="badge ${PRI_BADGE[t.priority]}">${PRI_LABEL[t.priority]}</span></span></div>
     <div class="detail-row"><span class="dl">COLUMN</span><span class="dv">${colLabel}</span></div>
+    ${t.dueAt ? `<div class="detail-row"><span class="dl">DUE</span><span class="dv">${esc(fmtDue(t.dueAt))}</span></div>` : ''}
     <div class="detail-row"><span class="dl">CREATED</span><span class="dv">${new Date(t.createdAt).toLocaleString()}</span></div>
     ${t.completedAt ? `<div class="detail-row"><span class="dl">COMPLETED</span><span class="dv">${new Date(t.completedAt).toLocaleString()}</span></div>` : ''}
     ${t.description ? `<div class="sec-label">DESCRIPTION</div><div class="detail-desc">${esc(t.description)}</div>` : ''}
@@ -478,10 +687,140 @@ function closeOverlay(id){
   if(id === 'cardSheet') state.sheetCardId = null;
 }
 
+// ── Connection / sync / suggestions ──────────────────────────────────────────
+function refreshConnUI(){
+  const pill = document.getElementById('connPill');
+  const label = document.getElementById('connLabel');
+  const syncBtn = document.getElementById('syncBtn');
+  const sugBtn = document.getElementById('suggestionsBtn');
+
+  if(state.mode !== 'api'){
+    pill.hidden = true;
+    syncBtn.hidden = true;
+    sugBtn.hidden = true;
+    return;
+  }
+  pill.hidden = false;
+  if(state.connected){
+    pill.classList.add('connected');
+    label.textContent = (state.userEmail || 'CONNECTED').toUpperCase();
+    pill.title = 'Click to disconnect';
+    syncBtn.hidden = false;
+    sugBtn.hidden = false;
+  }else{
+    pill.classList.remove('connected');
+    label.textContent = 'SIGN IN';
+    pill.title = 'Sign in with Google';
+    syncBtn.hidden = true;
+    sugBtn.hidden = true;
+  }
+}
+
+function handleConnPillClick(){
+  if(state.mode !== 'api') return;
+  if(state.connected){
+    if(confirm('Disconnect your Google account? Tasks stay on the server but will no longer sync.')){
+      fetch('/api/auth/disconnect', {method:'POST', credentials:'same-origin'})
+        .then(() => { state.connected = false; state.userEmail = null; refreshConnUI(); toast('Disconnected'); });
+    }
+  }else{
+    window.location.href = '/api/auth/login';
+  }
+}
+
+async function runSync(){
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="pulse"></span> SYNCING';
+  try{
+    const out = await apiFetch('/api/sync', {method:'POST'});
+    const t = out.tasks || {}, c = out.calendar || {}, g = out.gmail || {};
+    const parts = [];
+    if(t.pushed || t.updated) parts.push(`Tasks +${t.pushed||0}/~${t.updated||0}`);
+    if(c.created || c.updated) parts.push(`Cal +${c.created||0}/~${c.updated||0}`);
+    if(g.autoCreated) parts.push(`Auto ${g.autoCreated}`);
+    if(g.suggested) parts.push(`${g.suggested} suggestions`);
+    toast(parts.length ? parts.join(' · ') : 'Synced (no changes)');
+    // refresh tasks + suggestions counts
+    state.tasks = await loadTasks();
+    renderBoard();
+    await refreshSuggestionCount();
+  }catch(err){
+    toast('Sync failed: ' + err.message, true);
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+async function refreshSuggestionCount(){
+  if(state.mode !== 'api' || !state.connected) return;
+  try{
+    state.suggestions = await apiFetch('/api/suggestions');
+    const el = document.getElementById('sugCount');
+    if(state.suggestions.length){
+      el.textContent = state.suggestions.length;
+      el.hidden = false;
+    }else{
+      el.hidden = true;
+    }
+  }catch(_){}
+}
+
+async function openSuggestions(){
+  await refreshSuggestionCount();
+  const list = document.getElementById('sugList');
+  if(!state.suggestions.length){
+    list.innerHTML = `<div class="kcol-empty" style="border-style:dashed">No suggestions right now. Try Sync to scan inbox.</div>`;
+  }else{
+    list.innerHTML = state.suggestions.map(s => `
+      <div class="sug-card" data-sug="${s.id}">
+        <div class="sug-subject">${esc(s.suggestedTitle || s.subject)}</div>
+        <div class="sug-from">${esc(s.sender)}</div>
+        <div class="sug-snippet">${esc(s.snippet)}</div>
+        <div class="sug-actions">
+          <button class="btn btn-green" data-sug-action="accept" data-sug="${s.id}">ACCEPT</button>
+          <button class="btn btn-ghost" data-sug-action="dismiss" data-sug="${s.id}">DISMISS</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  openOverlay('sugSheet');
+}
+
+async function handleSuggestionAction(action, sugId){
+  try{
+    if(action === 'accept'){
+      const t = await apiFetch(`/api/suggestions/${sugId}/accept`, {method:'POST'});
+      state.tasks.push(t);
+      renderBoard();
+      toast('Added to To Do');
+    }else if(action === 'dismiss'){
+      await apiFetch(`/api/suggestions/${sugId}/dismiss`, {method:'POST'});
+    }
+    state.suggestions = state.suggestions.filter(s => String(s.id) !== String(sugId));
+    await openSuggestions();      // refresh the visible list
+  }catch(err){
+    toast('Action failed: ' + err.message, true);
+  }
+}
+
 // ── Init / event wiring ──────────────────────────────────────────────────────
-function init(){
-  state.tasks = loadTasks();
+async function init(){
+  await detectMode();
+  refreshConnUI();
+  state.tasks = await loadTasks();
   renderBoard();
+  if(state.mode === 'api' && state.connected){
+    refreshSuggestionCount();
+  }
+
+  // If we just completed the OAuth callback, show a toast
+  if(new URLSearchParams(location.search).get('connected') === '1'){
+    toast('Connected to Google');
+    history.replaceState({}, '', location.pathname);
+  }
 
   // Delegated pointerdown on board for card drag/tap
   document.getElementById('board').addEventListener('pointerdown', onPointerDown);
@@ -542,6 +881,15 @@ function init(){
       deleteTask(id);
       closeOverlay('cardSheet');
     }
+  });
+
+  // Connection + sync + suggestions
+  document.getElementById('connPill').addEventListener('click', handleConnPillClick);
+  document.getElementById('syncBtn').addEventListener('click', runSync);
+  document.getElementById('suggestionsBtn').addEventListener('click', openSuggestions);
+  document.getElementById('sugList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-sug-action]');
+    if(btn) handleSuggestionAction(btn.dataset.sugAction, btn.dataset.sug);
   });
 
   // ESC closes any overlay
