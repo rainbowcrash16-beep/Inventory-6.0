@@ -2,6 +2,12 @@
 import os
 import json
 from datetime import datetime, timedelta
+
+# Google often returns scopes in a different order or with implicit additions
+# (e.g. adding 'openid'). Relax oauthlib's strict scope validation so this
+# doesn't raise on the callback.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials as GoogleCreds
 from google.auth.transport.requests import Request

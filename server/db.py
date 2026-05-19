@@ -26,7 +26,7 @@ class Credentials(Base):
     id = Column(Integer, primary_key=True)
     google_id = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    refresh_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
     access_token = Column(Text, nullable=True)
     token_expiry = Column(DateTime, nullable=True)
     scopes = Column(Text, nullable=True)

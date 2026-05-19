@@ -56,10 +56,29 @@ def auth_login():
 def auth_callback():
     state = flask_session.get("oauth_state") or request.args.get("state")
     code = request.args.get("code")
+    err = request.args.get("error")
+    if err:
+        return _auth_error_page(f"Google returned an error: {err}")
     if not code:
-        return "Missing code", 400
-    google_auth.exchange_code(code, state)
+        return _auth_error_page("Missing authorization code in callback.")
+    try:
+        google_auth.exchange_code(code, state)
+    except Exception as e:
+        app.logger.exception("OAuth callback failed")
+        return _auth_error_page(f"{type(e).__name__}: {e}")
     return redirect("/kanban.html?connected=1")
+
+
+def _auth_error_page(message):
+    safe = (message or "Unknown error").replace("<", "&lt;").replace(">", "&gt;")
+    html = f"""<!doctype html><meta charset="utf-8">
+<title>Sign-in failed</title>
+<body style="background:#0A0A0F;color:#E8E8F0;font-family:monospace;padding:40px;line-height:1.5">
+<h1 style="color:#FF4D6D">Sign-in failed</h1>
+<pre style="background:#12121A;border:1px solid #1E1E2E;padding:14px;border-radius:8px;white-space:pre-wrap;word-break:break-word">{safe}</pre>
+<p>Check the server logs for the full traceback, then <a href="/kanban.html" style="color:#00D4AA">go back</a>.</p>
+</body>"""
+    return html, 500
 
 
 @app.post("/api/auth/disconnect")
