@@ -8,16 +8,57 @@ from db import session, Task, EmailSuggestion, SyncState
 from google_auth import service
 
 AUTOLABEL = "kanban"
-SUGGEST_QUERY = "is:unread newer_than:7d -category:promotions -category:social"
-ACTION_VERBS = (
-    "please", "can you", "could you", "would you", "need", "needs",
-    "todo", "to-do", "to do", "reminder", "deadline", "due", "follow up",
-    "follow-up", "review", "approve", "send", "draft", "respond", "reply",
-    "schedule", "book", "buy", "pick up", "call", "submit", "complete",
+# Exclude obvious auto-mail categories before we even look at the message.
+SUGGEST_QUERY = (
+    "is:unread newer_than:7d "
+    "-category:promotions -category:social -category:forums -category:updates "
+    "-from:noreply -from:no-reply -from:notifications -from:donotreply "
+    "-from:do-not-reply -from:notify -from:alert -from:alerts "
+    "-from:security -from:billing -from:support"
+)
+
+# An email needs an explicit personal ask OR an explicit deadline to qualify.
+# Past versions caught everything with words like 'review' or 'submit', which
+# is exactly the vocabulary security/login emails use ("Review your sign-in").
+DIRECT_ASK_RE = re.compile(
+    r"\b("
+    r"can you|could you|would you|will you|"
+    r"please (?:can|could|would|review|send|draft|respond|reply|forward|share|check|update|sign|prepare|approve|confirm|finalize|finalise|fix|fill|complete|look|take a look)|"
+    r"i need you to|need you to|"
+    r"action(\s+required| needed)|"
+    r"todo|to-do"
+    r")\b",
+    re.IGNORECASE,
 )
 DEADLINE_RE = re.compile(
-    r"\b(by|before|due|deadline)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|"
-    r"next week|this week|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}[/-]\d{1,2})",
+    r"\b(by|before|due (?:on|by)?|deadline(?:\s+is)?)\s+"
+    r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"tomorrow|today|tonight|eod|cob|noon|"
+    r"(?:next|this) (?:week|month|monday|tuesday|wednesday|thursday|friday)|"
+    r"\d{1,2}(:\d{2})?\s*(am|pm)?|"
+    r"\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|"
+    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2})",
+    re.IGNORECASE,
+)
+
+# Hard-exclude subjects that look like account/security/transactional mail
+# even if a positive signal slipped through.
+EXCLUDE_SUBJECT_RE = re.compile(
+    r"\b("
+    r"sign[- ]?in|log[- ]?in|signed in|logged in|new (device|sign[- ]?in)|"
+    r"verif(y|ication)|verify your|confirm your (email|address|account)|"
+    r"security (alert|code|notice)|password (reset|changed|updated)|"
+    r"2fa|two[- ]?factor|otp|one[- ]?time (code|password|passcode)|"
+    r"your (order|shipment|receipt|invoice|statement|subscription|payment|delivery|package)|"
+    r"order (confirmation|shipped|delivered)|payment (received|failed|due)|"
+    r"unsubscribe|newsletter|digest|notification|"
+    r"welcome to|getting started"
+    r")\b",
+    re.IGNORECASE,
+)
+EXCLUDE_SENDER_RE = re.compile(
+    r"(noreply|no-reply|donotreply|do-not-reply|notifications?|notify|"
+    r"alerts?|security|account|billing|receipts?|mailer-daemon|postmaster)@",
     re.IGNORECASE,
 )
 
@@ -41,15 +82,17 @@ def _header(headers, key):
     return ""
 
 
-def _looks_like_task(subject, snippet):
-    text = (subject + " " + snippet).lower()
-    if any(v in text for v in ACTION_VERBS):
-        return True
-    if "?" in subject:
-        return True
-    if DEADLINE_RE.search(text):
-        return True
-    return False
+def _looks_like_task(subject, sender, snippet):
+    if EXCLUDE_SENDER_RE.search(sender or ""):
+        return False
+    if EXCLUDE_SUBJECT_RE.search(subject or ""):
+        return False
+    text = (subject or "") + " " + (snippet or "")
+    has_ask = bool(DIRECT_ASK_RE.search(text))
+    has_deadline = bool(DEADLINE_RE.search(text))
+    # Require a real ask OR a real deadline. A '?' alone is not enough —
+    # newsletters and security alerts often contain rhetorical questions.
+    return has_ask or has_deadline
 
 
 def _suggested_title(subject):
@@ -129,7 +172,7 @@ def scan():
             subject = _header(headers, "Subject") or ""
             sender = _header(headers, "From") or ""
             snippet = msg.get("snippet", "")
-            if not _looks_like_task(subject, snippet):
+            if not _looks_like_task(subject, sender, snippet):
                 continue
             sug = EmailSuggestion(
                 email_id=email_id,
