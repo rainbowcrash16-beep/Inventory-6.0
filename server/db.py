@@ -72,20 +72,20 @@ class Task(Base):
     # Text so the same DDL works on SQLite and Postgres without a typed JSON
     # column (and so the in-place migration in _migrate() is portable).
     subtasks = Column(Text, nullable=True)
+    materials = Column(Text, nullable=True)
 
-    def get_subtasks(self):
-        if not self.subtasks:
+    def _get_list(self, raw):
+        if not raw:
             return []
         try:
-            arr = json.loads(self.subtasks)
+            arr = json.loads(raw)
             return arr if isinstance(arr, list) else []
         except (ValueError, TypeError):
             return []
 
-    def set_subtasks(self, items):
+    def _clean_list(self, items):
         if items is None:
-            self.subtasks = None
-            return
+            return None
         clean = []
         for s in items:
             if not isinstance(s, dict):
@@ -96,7 +96,12 @@ class Task(Base):
                 continue
             done = bool(s.get("done"))
             clean.append({"id": sid, "text": txt[:200], "done": done})
-        self.subtasks = json.dumps(clean) if clean else None
+        return json.dumps(clean) if clean else None
+
+    def get_subtasks(self):  return self._get_list(self.subtasks)
+    def get_materials(self): return self._get_list(self.materials)
+    def set_subtasks(self, items):  self.subtasks  = self._clean_list(items)
+    def set_materials(self, items): self.materials = self._clean_list(items)
 
     def to_dict(self):
         return {
@@ -113,6 +118,7 @@ class Task(Base):
             "googleEventId": self.google_event_id,
             "sourceEmailId": self.source_email_id,
             "subtasks": self.get_subtasks(),
+            "materials": self.get_materials(),
         }
 
 
@@ -172,6 +178,8 @@ def _migrate():
     statements = []
     if "subtasks" not in cols:
         statements.append("ALTER TABLE tasks ADD COLUMN subtasks TEXT")
+    if "materials" not in cols:
+        statements.append("ALTER TABLE tasks ADD COLUMN materials TEXT")
     if not statements:
         return
     with engine.begin() as conn:

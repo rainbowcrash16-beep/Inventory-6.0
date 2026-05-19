@@ -92,6 +92,9 @@ body{
 .sub-prog{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:2px 7px;font-size:9px;font-weight:700;letter-spacing:.5px;background:var(--card);border:1px solid var(--border);color:var(--muted);margin-top:6px}
 .sub-prog.sp-some{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 50%,var(--border))}
 .sub-prog.sp-done{color:var(--green);border-color:color-mix(in srgb,var(--green) 60%,var(--border))}
+.mat-prog{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:2px 7px;font-size:9px;font-weight:700;letter-spacing:.5px;background:var(--card);border:1px solid var(--border);color:var(--muted);margin-top:6px}
+.mat-prog.mp-some{color:var(--purple);border-color:color-mix(in srgb,var(--purple) 55%,var(--border))}
+.mat-prog.mp-done{color:var(--green); border-color:color-mix(in srgb,var(--green)  60%,var(--border))}
 .kcard-progress{position:absolute;left:4px;right:0;bottom:0;height:2px;background:transparent;border-radius:0 0 10px 0;overflow:hidden}
 .kcard-progress > i{display:block;height:100%;background:var(--col-accent);transition:width .25s}
 
@@ -285,6 +288,13 @@ body{
       </div>
     </div>
     <div class="field">
+      <label>MATERIALS</label>
+      <div class="sub-list" id="f-mats"></div>
+      <div class="sub-add-row">
+        <input id="f-mat-new" maxlength="200" placeholder="+ add material (Enter to add)" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
       <label>PRIORITY</label>
       <div class="pri-row" id="f-pri">
         <button type="button" class="pri-pill p-urgent" data-pri="urgent">URGENT</button>
@@ -375,19 +385,21 @@ const state = {
   formStatus: 'backlog',
   formDueAt: '',          // datetime-local string
   formSubtasks: [],       // [{id, text, done}] while the edit sheet is open
+  formMaterials: [],      // same shape; "stuff you need to do the task"
 };
 
 function genSubId(){
   return 's_' + Math.random().toString(36).slice(2,10);
 }
 
-// Compute "n done / N total" for a task's subtasks. Returns null if no subs.
-function subProgress(t){
-  const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
-  if(!subs.length) return null;
-  const done = subs.filter(s => s.done).length;
-  return {done, total: subs.length};
+// Compute "n done / N total" for a list of {done:bool}. Returns null if empty.
+function listProgress(list){
+  const arr = Array.isArray(list) ? list : [];
+  if(!arr.length) return null;
+  return {done: arr.filter(s => s.done).length, total: arr.length};
 }
+const subProgress = t => listProgress(t.subtasks);
+const matProgress = t => listProgress(t.materials);
 
 function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -546,13 +558,17 @@ function cardHTML(t){
   const bucket = dueBucket(t.dueAt);
   const dueLabel = bucket ? fmtDue(t.dueAt) : '';
   const dueIcon = bucket === 'overdue' ? '⚠' : (bucket === 'today' ? '●' : '⏰');
-  const prog = subProgress(t);
-  let progBadge = '', progBar = '';
-  if(prog){
-    const cls = prog.done === prog.total ? 'sp-done' : (prog.done > 0 ? 'sp-some' : '');
-    progBadge = `<span class="sub-prog ${cls}">☑ ${prog.done}/${prog.total}</span>`;
-    const pct = Math.round((prog.done / prog.total) * 100);
+  const sProg = subProgress(t), mProg = matProgress(t);
+  let subBadge = '', matBadge = '', progBar = '';
+  if(sProg){
+    const cls = sProg.done === sProg.total ? 'sp-done' : (sProg.done > 0 ? 'sp-some' : '');
+    subBadge = `<span class="sub-prog ${cls}">☑ ${sProg.done}/${sProg.total}</span>`;
+    const pct = Math.round((sProg.done / sProg.total) * 100);
     progBar = `<div class="kcard-progress"><i style="width:${pct}%"></i></div>`;
+  }
+  if(mProg){
+    const cls = mProg.done === mProg.total ? 'mp-done' : (mProg.done > 0 ? 'mp-some' : '');
+    matBadge = `<span class="mat-prog ${cls}">📦 ${mProg.done}/${mProg.total}</span>`;
   }
   return `<div class="kcard" data-id="${t.id}">
     <div class="kcard-stripe p-${t.priority}"></div>
@@ -563,7 +579,7 @@ function cardHTML(t){
     ${t.description ? `<div class="kcard-desc">${esc(t.description)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       ${bucket ? `<span class="due-chip due-${bucket}">${dueIcon} ${esc(dueLabel)}</span>` : ''}
-      ${progBadge}
+      ${subBadge}${matBadge}
     </div>
     ${progBar}
   </div>`;
@@ -615,23 +631,24 @@ async function moveTask(id, toStatus){
   }
 }
 
-async function toggleSubtaskInSheet(taskId, subId){
+async function toggleListItemInSheet(taskId, kind, itemId){
   const t = findTask(taskId);
-  if(!t || !Array.isArray(t.subtasks)) return;
-  const s = t.subtasks.find(x => x.id === subId);
-  if(!s) return;
-  s.done = !s.done;
-  // refresh card behind the sheet (progress)
+  if(!t) return;
+  const field = kind === 'sub' ? 'subtasks' : 'materials';
+  const list = Array.isArray(t[field]) ? t[field] : [];
+  const item = list.find(x => x.id === itemId);
+  if(!item) return;
+  item.done = !item.done;
   renderBoard();
   if(state.mode === 'api'){
     try{
       const updated = await apiFetch('/api/tasks/' + encodeURIComponent(taskId), {
-        method: 'PATCH', body: JSON.stringify({subtasks: t.subtasks}),
+        method: 'PATCH', body: JSON.stringify({[field]: list}),
       });
       Object.assign(t, updated);
       renderBoard();
     }catch(err){
-      s.done = !s.done;       // revert
+      item.done = !item.done;     // revert
       renderBoard();
       toast('Update failed: ' + err.message, true);
     }
@@ -750,11 +767,13 @@ function openEditSheet(opts){
   state.formPriority = existing ? existing.priority : 'medium';
   state.formStatus   = existing ? existing.status   : (opts.status || 'backlog');
   // deep copy so editing the form doesn't mutate the live task until SAVE
-  state.formSubtasks = existing && Array.isArray(existing.subtasks)
-    ? existing.subtasks.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}))
-    : [];
+  const cloneList = arr => arr.map(s => ({id: s.id || genSubId(), text: s.text, done: !!s.done}));
+  state.formSubtasks  = existing && Array.isArray(existing.subtasks)  ? cloneList(existing.subtasks)  : [];
+  state.formMaterials = existing && Array.isArray(existing.materials) ? cloneList(existing.materials) : [];
   renderFormSubs();
+  renderFormMats();
   document.getElementById('f-sub-new').value = '';
+  document.getElementById('f-mat-new').value = '';
   // Due date — datetime-local wants 'YYYY-MM-DDTHH:MM' in local time
   let dueLocal = '';
   if(existing && existing.dueAt){
@@ -781,20 +800,23 @@ function syncStatusPills(){
   });
 }
 
-function renderFormSubs(){
-  const wrap = document.getElementById('f-subs');
-  if(!state.formSubtasks.length){
-    wrap.innerHTML = '';
-    return;
-  }
-  wrap.innerHTML = state.formSubtasks.map((s, i) => `
+// Render the editable list inside the edit sheet. `kind` is 'sub' or 'mat'
+// and drives both the data-attribute prefix (so the click handler can tell
+// which list it's mutating) and the form-state array it pulls from.
+function renderFormList(kind){
+  const wrap = document.getElementById(kind === 'sub' ? 'f-subs' : 'f-mats');
+  const list = kind === 'sub' ? state.formSubtasks : state.formMaterials;
+  if(!list.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = list.map((s, i) => `
     <div class="sub-row ${s.done ? 'sub-done' : ''}" data-i="${i}">
-      <input type="checkbox" class="sub-check" data-sub-toggle="${i}" ${s.done ? 'checked' : ''}>
-      <input class="sub-input" data-sub-edit="${i}" value="${esc(s.text)}" maxlength="200">
-      <button type="button" class="sub-del" data-sub-del="${i}" aria-label="Delete step">×</button>
+      <input type="checkbox" class="sub-check" data-${kind}-toggle="${i}" ${s.done ? 'checked' : ''}>
+      <input class="sub-input" data-${kind}-edit="${i}" value="${esc(s.text)}" maxlength="200">
+      <button type="button" class="sub-del" data-${kind}-del="${i}" aria-label="Delete">×</button>
     </div>
   `).join('');
 }
+const renderFormSubs = () => renderFormList('sub');
+const renderFormMats = () => renderFormList('mat');
 async function saveFromForm(){
   const titleEl = document.getElementById('f-title');
   const title = titleEl.value.trim();
@@ -814,9 +836,15 @@ async function saveFromForm(){
     const i = +el.dataset.subEdit;
     if(state.formSubtasks[i]) state.formSubtasks[i].text = el.value;
   });
-  const subtasks = state.formSubtasks
+  document.querySelectorAll('#f-mats [data-mat-edit]').forEach(el => {
+    const i = +el.dataset.matEdit;
+    if(state.formMaterials[i]) state.formMaterials[i].text = el.value;
+  });
+  const cleanList = arr => arr
     .map(s => ({id: s.id, text: (s.text || '').trim(), done: !!s.done}))
     .filter(s => s.text);
+  const subtasks  = cleanList(state.formSubtasks);
+  const materials = cleanList(state.formMaterials);
   const now = Date.now();
 
   if(state.mode === 'api'){
@@ -825,7 +853,7 @@ async function saveFromForm(){
         title, description: desc,
         priority: state.formPriority,
         status: state.formStatus,
-        dueAt, subtasks,
+        dueAt, subtasks, materials,
       };
       let saved;
       if(state.editingId){
@@ -859,6 +887,7 @@ async function saveFromForm(){
     t.status = state.formStatus;
     t.dueAt = dueAt;
     t.subtasks = subtasks;
+    t.materials = materials;
     t.updatedAt = now;
     if(t.status === 'done' && !wasDone) t.completedAt = now;
     if(t.status !== 'done') t.completedAt = null;
@@ -868,7 +897,7 @@ async function saveFromForm(){
       title, description: desc,
       priority: state.formPriority,
       status: state.formStatus,
-      dueAt, subtasks,
+      dueAt, subtasks, materials,
       createdAt: now, updatedAt: now,
       completedAt: state.formStatus === 'done' ? now : null,
     });
@@ -886,17 +915,21 @@ function openCardSheet(id){
   document.getElementById('cardTitle').textContent = t.title.toUpperCase();
   const colLabel = COLUMNS.find(c => c.status === t.status).label;
   const body = document.getElementById('cardBody');
-  const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
-  const subsHTML = subs.length ? `
-    <div class="sec-label">CHECKLIST · ${subs.filter(s=>s.done).length}/${subs.length}</div>
-    <div class="sub-list" id="sheetSubs">
-      ${subs.map(s => `
-        <div class="sub-row ${s.done ? 'sub-done' : ''}" data-sub-id="${esc(s.id)}">
-          <input type="checkbox" class="sub-check" data-sheet-toggle="${esc(s.id)}" ${s.done ? 'checked' : ''}>
-          <div class="sub-input" style="cursor:default">${esc(s.text)}</div>
-        </div>
-      `).join('')}
-    </div>` : '';
+  const listHTML = (kind, label) => {
+    const list = Array.isArray(t[kind === 'sub' ? 'subtasks' : 'materials']) ? t[kind === 'sub' ? 'subtasks' : 'materials'] : [];
+    if(!list.length) return '';
+    const done = list.filter(s => s.done).length;
+    return `
+      <div class="sec-label">${label} · ${done}/${list.length}</div>
+      <div class="sub-list">
+        ${list.map(s => `
+          <div class="sub-row ${s.done ? 'sub-done' : ''}">
+            <input type="checkbox" class="sub-check" data-sheet-toggle="${kind}:${esc(s.id)}" ${s.done ? 'checked' : ''}>
+            <div class="sub-input" style="cursor:default">${esc(s.text)}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  };
 
   body.innerHTML = `
     <div class="detail-row"><span class="dl">PRIORITY</span>
@@ -906,7 +939,8 @@ function openCardSheet(id){
     <div class="detail-row"><span class="dl">CREATED</span><span class="dv">${new Date(t.createdAt).toLocaleString()}</span></div>
     ${t.completedAt ? `<div class="detail-row"><span class="dl">COMPLETED</span><span class="dv">${new Date(t.completedAt).toLocaleString()}</span></div>` : ''}
     ${t.description ? `<div class="sec-label">DESCRIPTION</div><div class="detail-desc">${md(t.description)}</div>` : ''}
-    ${subsHTML}
+    ${listHTML('sub', 'CHECKLIST')}
+    ${listHTML('mat', 'MATERIALS')}
   `;
   document.querySelectorAll('#moveGrid .btn').forEach(b => {
     b.disabled = b.dataset.move === t.status;
@@ -1119,50 +1153,56 @@ async function init(){
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); saveFromForm(); }
   });
 
-  // Subtask editor — add row, toggle/edit/delete existing
-  const fSubNew = document.getElementById('f-sub-new');
-  fSubNew.addEventListener('keydown', e => {
-    if(e.key === 'Enter'){
-      e.preventDefault();
-      const v = fSubNew.value.trim();
-      if(!v) return;
-      state.formSubtasks.push({id: genSubId(), text: v, done: false});
-      fSubNew.value = '';
-      renderFormSubs();
-    }
-  });
-  document.getElementById('f-subs').addEventListener('click', e => {
-    const tg = e.target.closest('[data-sub-toggle]');
-    if(tg){
-      const i = +tg.dataset.subToggle;
-      if(state.formSubtasks[i]){
-        state.formSubtasks[i].done = !state.formSubtasks[i].done;
-        renderFormSubs();
+  // List editors (checklist + materials share the same handlers, switched
+  // by `kind` = 'sub' or 'mat').
+  function wireListEditor(kind){
+    const list = () => kind === 'sub' ? state.formSubtasks : state.formMaterials;
+    const render = kind === 'sub' ? renderFormSubs : renderFormMats;
+    const inputEl = document.getElementById(kind === 'sub' ? 'f-sub-new' : 'f-mat-new');
+    const wrap = document.getElementById(kind === 'sub' ? 'f-subs' : 'f-mats');
+    inputEl.addEventListener('keydown', e => {
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        const v = inputEl.value.trim();
+        if(!v) return;
+        list().push({id: genSubId(), text: v, done: false});
+        inputEl.value = '';
+        render();
       }
-      return;
-    }
-    const del = e.target.closest('[data-sub-del]');
-    if(del){
-      const i = +del.dataset.subDel;
-      state.formSubtasks.splice(i, 1);
-      renderFormSubs();
-    }
-  });
-  document.getElementById('f-subs').addEventListener('input', e => {
-    const ed = e.target.closest('[data-sub-edit]');
-    if(ed){
-      const i = +ed.dataset.subEdit;
-      if(state.formSubtasks[i]) state.formSubtasks[i].text = ed.value;
-    }
-  });
+    });
+    wrap.addEventListener('click', e => {
+      const tg = e.target.closest(`[data-${kind}-toggle]`);
+      if(tg){
+        const i = +tg.dataset[kind + 'Toggle'];
+        if(list()[i]){ list()[i].done = !list()[i].done; render(); }
+        return;
+      }
+      const del = e.target.closest(`[data-${kind}-del]`);
+      if(del){
+        const i = +del.dataset[kind + 'Del'];
+        list().splice(i, 1); render();
+      }
+    });
+    wrap.addEventListener('input', e => {
+      const ed = e.target.closest(`[data-${kind}-edit]`);
+      if(ed){
+        const i = +ed.dataset[kind + 'Edit'];
+        if(list()[i]) list()[i].text = ed.value;
+      }
+    });
+  }
+  wireListEditor('sub');
+  wireListEditor('mat');
 
-  // Detail-sheet subtask checkbox → persist toggle live
+  // Detail-sheet checkboxes (subtasks + materials) → persist toggle live.
+  // data-sheet-toggle="<kind>:<itemId>" carries which list and which item.
   document.getElementById('cardBody').addEventListener('click', e => {
     const cb = e.target.closest('[data-sheet-toggle]');
     if(cb && state.sheetCardId){
-      toggleSubtaskInSheet(state.sheetCardId, cb.dataset.sheetToggle);
-      // re-render the sheet's checklist immediately so the checkbox state
-      // reflects without waiting for the network round-trip
+      const [kind, itemId] = cb.dataset.sheetToggle.split(':');
+      toggleListItemInSheet(state.sheetCardId, kind, itemId);
+      // Re-render the sheet so the checkbox state updates without waiting
+      // for the network round-trip.
       const t = findTask(state.sheetCardId);
       if(t) openCardSheet(t.id);
     }
