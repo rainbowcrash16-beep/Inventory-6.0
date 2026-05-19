@@ -57,11 +57,16 @@ def authorization_url():
         include_granted_scopes="true",
         prompt="consent",
     )
-    return url, state
+    # PKCE: the library generated a one-time code_verifier when building the
+    # URL. Google will require us to echo it back during the token exchange,
+    # so we hand it to the caller to stash in the session alongside state.
+    return url, state, getattr(flow, "code_verifier", None)
 
 
-def exchange_code(code, state):
+def exchange_code(code, state, code_verifier=None):
     flow = make_flow(state=state)
+    if code_verifier:
+        flow.code_verifier = code_verifier
     flow.fetch_token(code=code)
     creds = flow.credentials
     userinfo = build("oauth2", "v2", credentials=creds).userinfo().get().execute()

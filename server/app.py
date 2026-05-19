@@ -47,14 +47,16 @@ def me():
 
 @app.get("/api/auth/login")
 def auth_login():
-    url, state = google_auth.authorization_url()
+    url, state, code_verifier = google_auth.authorization_url()
     flask_session["oauth_state"] = state
+    flask_session["oauth_code_verifier"] = code_verifier
     return redirect(url)
 
 
 @app.get("/api/auth/callback")
 def auth_callback():
     state = flask_session.get("oauth_state") or request.args.get("state")
+    code_verifier = flask_session.pop("oauth_code_verifier", None)
     code = request.args.get("code")
     err = request.args.get("error")
     if err:
@@ -62,7 +64,7 @@ def auth_callback():
     if not code:
         return _auth_error_page("Missing authorization code in callback.")
     try:
-        google_auth.exchange_code(code, state)
+        google_auth.exchange_code(code, state, code_verifier=code_verifier)
     except Exception as e:
         app.logger.exception("OAuth callback failed")
         return _auth_error_page(f"{type(e).__name__}: {e}")
