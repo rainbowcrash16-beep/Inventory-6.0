@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from db import init_db, session, Task, EmailSuggestion
+from db import init_db, session, with_retry, Task, EmailSuggestion
 import google_auth
 import google_tasks
 import google_calendar
@@ -41,7 +41,7 @@ def static_file(filename):
 # ── Auth ────────────────────────────────────────────────────────────────────
 @app.get("/api/me")
 def me():
-    user = google_auth.current_user()
+    user = with_retry(google_auth.current_user)
     return jsonify({"connected": user is not None, "user": user})
 
 
@@ -108,12 +108,14 @@ def _parse_due(s):
 
 @app.get("/api/tasks")
 def list_tasks():
-    s = session()
-    try:
-        rows = s.query(Task).all()
-        return jsonify([r.to_dict() for r in rows])
-    finally:
-        s.close()
+    def _go():
+        s = session()
+        try:
+            rows = s.query(Task).all()
+            return [r.to_dict() for r in rows]
+        finally:
+            s.close()
+    return jsonify(with_retry(_go))
 
 
 @app.post("/api/tasks")

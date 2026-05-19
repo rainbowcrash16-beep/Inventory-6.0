@@ -11,10 +11,29 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///kanban.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+_is_pg = "postgresql" in DATABASE_URL
+
+# Neon's free tier suspends compute after ~5min idle, which drops live
+# Postgres connections. pool_recycle proactively rotates connections under
+# that window; TCP keepalives detect a dead socket faster on slow networks.
+_connect_args = {}
+if _is_sqlite:
+    _connect_args = {"check_same_thread": False}
+elif _is_pg:
+    _connect_args = {
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+        "connect_timeout": 10,
+    }
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    pool_recycle=280,
+    connect_args=_connect_args,
 )
 SessionLocal = scoped_session(sessionmaker(bind=engine, autoflush=False, autocommit=False))
 Base = declarative_base()
@@ -104,3 +123,21 @@ def init_db():
 
 def session():
     return SessionLocal()
+
+
+def with_retry(fn, retries=1):
+    """Run fn(), and if it fails with a transient DB error, dispose the pool
+    and retry once. Covers the case where Neon's compute woke up mid-query."""
+    from sqlalchemy.exc import OperationalError, InterfaceError, DBAPIError
+    for attempt in range(retries + 1):
+        try:
+            return fn()
+        except (OperationalError, InterfaceError, DBAPIError) as e:
+            if attempt >= retries:
+                raise
+            print(f"[db] transient error, retrying: {e}")
+            try:
+                SessionLocal.remove()
+                engine.dispose()
+            except Exception:
+                pass
