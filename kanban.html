@@ -736,13 +736,21 @@ async function runSync(){
   try{
     const out = await apiFetch('/api/sync', {method:'POST'});
     const t = out.tasks || {}, c = out.calendar || {}, g = out.gmail || {};
-    const parts = [];
-    if(t.pushed || t.updated) parts.push(`Tasks +${t.pushed||0}/~${t.updated||0}`);
-    if(c.created || c.updated) parts.push(`Cal +${c.created||0}/~${c.updated||0}`);
-    if(g.autoCreated) parts.push(`Auto ${g.autoCreated}`);
-    if(g.suggested) parts.push(`${g.suggested} suggestions`);
-    toast(parts.length ? parts.join(' · ') : 'Synced (no changes)');
-    // refresh tasks + suggestions counts
+    const errs = [];
+    if(t.error) errs.push('Tasks: ' + t.error);
+    if(c.error) errs.push('Cal: '   + c.error);
+    if(g.error) errs.push('Gmail: ' + g.error);
+    if(errs.length){
+      console.error('sync errors', out);
+      toast(errs.join(' | '), true);
+    }else{
+      const parts = [];
+      if(t.pushed || t.updated) parts.push(`Tasks +${t.pushed||0}/~${t.updated||0}`);
+      if(c.created || c.updated) parts.push(`Cal +${c.created||0}/~${c.updated||0}`);
+      if(g.autoCreated) parts.push(`Auto ${g.autoCreated}`);
+      if(g.suggested) parts.push(`${g.suggested} suggestions`);
+      toast(parts.length ? parts.join(' · ') : 'Synced (no changes)');
+    }
     state.tasks = await loadTasks();
     renderBoard();
     await refreshSuggestionCount();

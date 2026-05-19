@@ -188,17 +188,24 @@ def delete_task(task_id):
 
 
 # ── Sync ────────────────────────────────────────────────────────────────────
+def _safe_run(name, fn):
+    try:
+        return fn()
+    except Exception as e:
+        app.logger.exception("sync step '%s' failed", name)
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 @app.post("/api/sync")
 def sync_all():
     user = google_auth.current_user()
     if not user:
         return jsonify({"ok": False, "error": "not_connected"}), 401
-    out = {
-        "tasks":    google_tasks.sync(),
-        "calendar": google_calendar.sync(),
-        "gmail":    gmail_scan.scan(),
-    }
-    return jsonify(out)
+    return jsonify({
+        "tasks":    _safe_run("tasks",    google_tasks.sync),
+        "calendar": _safe_run("calendar", google_calendar.sync),
+        "gmail":    _safe_run("gmail",    gmail_scan.scan),
+    })
 
 
 # ── Email suggestions ───────────────────────────────────────────────────────
