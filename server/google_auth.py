@@ -80,13 +80,15 @@ def _ensure_user_and_household(userinfo):
     sure they have a household (joining 'My Tasks' if one already exists
     and isn't theirs, otherwise creating one)."""
     from db import session, User, Household, Membership
+    from sqlalchemy import text
     s = session()
     try:
         gid = userinfo.get("id", "")
         if not gid:
             raise RuntimeError("Google userinfo missing id")
         user = s.query(User).filter_by(google_id=gid).first()
-        if not user:
+        is_new_user = user is None
+        if is_new_user:
             user = User(
                 google_id=gid,
                 email=userinfo.get("email", ""),
@@ -112,6 +114,19 @@ def _ensure_user_and_household(userinfo):
                 h = Household(name="My Tasks", created_by_user_id=user.id)
                 s.add(h); s.flush()
                 s.add(Membership(household_id=h.id, user_id=user.id, role="owner"))
+
+        # Claim orphan email_suggestions if this is the only user — they
+        # belong to whoever was using the single-user database before the
+        # multi-user migration. Without this, the scanner would try to
+        # re-INSERT the same email_ids and trip (formerly) UNIQUE.
+        if is_new_user and s.query(User).count() == 1:
+            try:
+                s.execute(text(
+                    "UPDATE email_suggestions SET user_id = :uid "
+                    "WHERE user_id IS NULL"
+                ), {"uid": user.id})
+            except Exception as e:
+                print(f"[auth] claiming orphan suggestions failed: {e}")
         s.commit()
         return user.to_dict() | {"id": user.id}
     finally:

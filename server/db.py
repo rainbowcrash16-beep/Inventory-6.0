@@ -301,7 +301,100 @@ def _migrate():
                 except Exception as e:
                     print(f"[db] migration step failed ({ddl}): {e}")
 
+        # email_suggestions used to have UNIQUE on email_id from the
+        # single-user era. With multi-user that's wrong (two users can
+        # legitimately have a suggestion for the same Gmail thread id),
+        # and on Postgres it surfaces as IntegrityError gkpj when the
+        # scanner re-runs on the same inbox. Drop it on whichever
+        # dialect we're on.
+        if "email_suggestions" in insp.get_table_names():
+            _drop_legacy_email_id_unique(conn)
+
     _backfill_single_user_data()
+
+
+def _drop_legacy_email_id_unique(conn):
+    """Drop the legacy UNIQUE on email_suggestions.email_id, regardless of
+    how it was created (CONSTRAINT vs. standalone INDEX) and what dialect
+    we're on. Silent on failure — if nothing matches, the constraint was
+    already gone."""
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        try:
+            # Find every unique constraint on the email_id column and drop it.
+            rows = conn.execute(text("""
+                SELECT con.conname FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                JOIN pg_attribute att ON att.attrelid = rel.oid
+                                      AND att.attnum = ANY(con.conkey)
+                WHERE rel.relname = 'email_suggestions'
+                  AND att.attname = 'email_id'
+                  AND con.contype = 'u'
+            """)).fetchall()
+            for (name,) in rows:
+                conn.execute(text(f'ALTER TABLE email_suggestions DROP CONSTRAINT "{name}"'))
+                print(f"[db] dropped legacy unique constraint: {name}")
+            # Also drop any leftover standalone unique index on email_id alone
+            rows = conn.execute(text("""
+                SELECT i.relname FROM pg_index x
+                JOIN pg_class i ON i.oid = x.indexrelid
+                JOIN pg_class t ON t.oid = x.indrelid
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(x.indkey)
+                WHERE t.relname = 'email_suggestions'
+                  AND a.attname = 'email_id'
+                  AND x.indisunique = true
+                  AND array_length(x.indkey, 1) = 1
+            """)).fetchall()
+            for (name,) in rows:
+                conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+                print(f"[db] dropped legacy unique index: {name}")
+        except Exception as e:
+            print(f"[db] dropping legacy email_id unique failed: {e}")
+    elif dialect == "sqlite":
+        try:
+            needs_rebuild = False
+            indexes = conn.execute(
+                text("PRAGMA index_list('email_suggestions')")
+            ).fetchall()
+            for row in indexes:
+                idx_name, is_unique = row[1], row[2]
+                if not is_unique:
+                    continue
+                cols = conn.execute(
+                    text(f"PRAGMA index_info('{idx_name}')")
+                ).fetchall()
+                if len(cols) == 1 and cols[0][2] == "email_id":
+                    if idx_name.startswith("sqlite_autoindex_"):
+                        # Auto-indexes from CREATE TABLE can only be removed
+                        # by rebuilding the table without the UNIQUE clause.
+                        needs_rebuild = True
+                    else:
+                        conn.execute(text(f"DROP INDEX {idx_name}"))
+                        print(f"[db] dropped legacy unique index: {idx_name}")
+            if needs_rebuild:
+                cols_info = conn.execute(
+                    text("PRAGMA table_info('email_suggestions')")
+                ).fetchall()
+                col_names = [c[1] for c in cols_info]
+                cols_csv = ", ".join(col_names)
+                # Use the model to recreate the table shape — keeps us
+                # in sync with whatever columns are current.
+                EmailSuggestion.__table__.name = "email_suggestions_new"
+                try:
+                    EmailSuggestion.__table__.create(conn)
+                finally:
+                    EmailSuggestion.__table__.name = "email_suggestions"
+                conn.execute(text(
+                    f"INSERT INTO email_suggestions_new ({cols_csv}) "
+                    f"SELECT {cols_csv} FROM email_suggestions"
+                ))
+                conn.execute(text("DROP TABLE email_suggestions"))
+                conn.execute(text(
+                    "ALTER TABLE email_suggestions_new RENAME TO email_suggestions"
+                ))
+                print("[db] rebuilt email_suggestions to drop legacy UNIQUE on email_id")
+        except Exception as e:
+            print(f"[db] dropping legacy email_id unique failed: {e}")
 
 
 def _backfill_single_user_data():
@@ -370,6 +463,17 @@ def _backfill_single_user_data():
                 """), {"uid": user.id})
             except Exception as e:
                 print(f"[db] backfill task_sync failed: {e}")
+
+            # Adopt legacy email_suggestions rows for this user so the
+            # scanner's dedupe check picks them up and we don't try to
+            # re-insert duplicate email_ids.
+            try:
+                s.execute(text(
+                    "UPDATE email_suggestions SET user_id = :uid "
+                    "WHERE user_id IS NULL"
+                ), {"uid": user.id})
+            except Exception as e:
+                print(f"[db] backfill email_suggestions.user_id failed: {e}")
 
         s.commit()
         print(f"[db] backfilled: user_id={user.id if user else None} household_id={h.id}")
