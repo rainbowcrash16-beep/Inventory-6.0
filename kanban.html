@@ -32,6 +32,10 @@ body{
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 10px;padding-top:calc(14px + env(safe-area-inset-top));flex-shrink:0}
 .hdr h1{font-family:var(--font-head);font-size:22px;letter-spacing:3px}
 .hdr-sub{font-size:10px;color:var(--muted);letter-spacing:1.5px;margin-top:2px}
+.hdr-sub.hh-active{color:var(--green);font-weight:700}
+.hdr-sub.hh-switchable{cursor:pointer}
+.hdr-sub.hh-switchable:hover{filter:brightness(1.3)}
+.hdr-sub.hh-switchable::after{content:" ▾";color:var(--muted);font-weight:400}
 
 /* Hamburger toggle */
 .hbg-btn{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0;transition:border-color .15s,background .15s}
@@ -72,6 +76,19 @@ body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg
 .hh-link-row{display:flex;gap:6px;margin-top:8px}
 .hh-link-row input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:var(--font-mono);font-size:10px;letter-spacing:0;outline:none}
 .hh-link-row button{background:var(--green);color:var(--dark);border:none;border-radius:8px;padding:7px 10px;font-size:10px;font-weight:800;letter-spacing:.5px;cursor:pointer;font-family:var(--font-mono)}
+
+/* Switch household sheet */
+.switch-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s;text-align:left;font-family:var(--font-mono);color:var(--text);width:100%;font-size:13px}
+.switch-row:hover{border-color:var(--green)}
+.switch-row.active{border-color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--card))}
+.switch-row .switch-meta{font-size:10px;color:var(--muted);letter-spacing:.5px;margin-top:3px}
+.switch-row .switch-tick{color:var(--green);font-size:14px}
+
+/* Mailto-style share buttons inside the invite link row */
+.hh-link-actions{display:flex;gap:6px;margin-top:6px}
+.hh-link-actions button{flex:1;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:10px;font-weight:700;letter-spacing:.5px;cursor:pointer;font-family:var(--font-mono)}
+.hh-link-actions button:hover{border-color:var(--green);color:var(--green)}
 
 /* Card attribution chip — only shown when household has multiple members */
 .kcard-by{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--muted);letter-spacing:.5px;margin-top:6px}
@@ -319,7 +336,7 @@ body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg
       </button>
       <div>
         <h1>KANBAN</h1>
-        <div class="hdr-sub">TASKS · PRIORITIZED</div>
+        <div class="hdr-sub" id="hdrHHName">TASKS · PRIORITIZED</div>
       </div>
     </div>
     <div class="link-row">
@@ -489,6 +506,16 @@ body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg
     <div class="sb-section">HOUSEHOLD</div>
     <div id="hhSection"></div>
   </aside>
+</div>
+
+<div class="overlay" id="switchSheet">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <h2>SWITCH HOUSEHOLD</h2>
+      <button class="close-btn" data-close="switchSheet" aria-label="Close">✕</button>
+    </div>
+    <div id="switchList" class="switch-list"></div>
+  </div>
 </div>
 
 <div class="overlay" id="inviteSheet">
@@ -1253,6 +1280,45 @@ async function refreshMembers(){
   }
 }
 
+function renderHeaderHousehold(){
+  const el = document.getElementById('hdrHHName');
+  if(!el) return;
+  if(state.mode !== 'api' || !state.signedIn || !state.activeHouseholdId){
+    el.textContent = 'TASKS · PRIORITIZED';
+    el.className = 'hdr-sub';
+    el.onclick = null;
+    return;
+  }
+  const active = state.households.find(h => h.id === state.activeHouseholdId);
+  if(!active) return;
+  const switchable = state.households.length > 1;
+  el.textContent = active.name.toUpperCase();
+  el.className = 'hdr-sub hh-active' + (switchable ? ' hh-switchable' : '');
+  el.onclick = switchable ? openSwitchSheet : null;
+  el.title = switchable ? 'Switch household' : '';
+}
+
+function openSwitchSheet(){
+  const list = document.getElementById('switchList');
+  list.innerHTML = state.households.map(h => `
+    <button class="switch-row ${h.id === state.activeHouseholdId ? 'active' : ''}" data-hid="${h.id}">
+      <div>
+        <div>${esc(h.name)}</div>
+        <div class="switch-meta">${h.memberCount} member${h.memberCount === 1 ? '' : 's'} · ${esc(h.role)}</div>
+      </div>
+      ${h.id === state.activeHouseholdId ? '<span class="switch-tick">✓</span>' : ''}
+    </button>
+  `).join('');
+  list.querySelectorAll('[data-hid]').forEach(b => {
+    b.addEventListener('click', async () => {
+      const hid = parseInt(b.dataset.hid, 10);
+      closeOverlay('switchSheet');
+      if(hid !== state.activeHouseholdId) await switchHousehold(hid);
+    });
+  });
+  openOverlay('switchSheet');
+}
+
 function renderHouseholdSection(){
   const wrap = document.getElementById('hhSection');
   if(!wrap) return;
@@ -1332,12 +1398,7 @@ async function handleHHAction(action){
     return;
   }
   if(action === 'switch'){
-    const ids = state.households.map(h => h.id);
-    const labels = state.households.map(h => h.name + (h.id === state.activeHouseholdId ? '  (active)' : ''));
-    const pick = prompt('Switch to which household?\n' + labels.map((l, i) => (i+1)+'. '+l).join('\n'));
-    const n = parseInt(pick, 10);
-    if(!n || n < 1 || n > ids.length) return;
-    await switchHousehold(ids[n-1]);
+    openSwitchSheet();
     return;
   }
   if(action === 'leave'){
@@ -1348,6 +1409,7 @@ async function handleHHAction(action){
       state.tasks = await loadTasks();
       renderBoard();
       renderHouseholdSection();
+      renderHeaderHousehold();
       toast('Left household');
     }catch(err){ toast(err.message, true); }
   }
@@ -1360,6 +1422,7 @@ async function switchHousehold(hid){
     state.tasks = await loadTasks();
     renderBoard();
     renderHouseholdSection();
+    renderHeaderHousehold();
     toast('Switched household');
   }catch(err){ toast('Switch failed: ' + err.message, true); }
 }
@@ -1377,25 +1440,59 @@ async function reloadMe(){
 }
 
 function promptInviteLink(link){
-  // Show a temporary panel with the link and a copy button.
+  // Show a panel with the link plus copy / email / SMS share actions.
   const wrap = document.getElementById('hhSection');
+  // Remove any stale invite panel from a previous click
+  wrap.querySelectorAll('.hh-link-row, .hh-link-actions').forEach(n => n.remove());
+
+  const hh = state.households.find(h => h.id === state.activeHouseholdId);
+  const hhName = hh ? hh.name : 'a household';
+  const who = state.user && state.user.name || 'I';
+  const subject = encodeURIComponent(`${who} invited you to ${hhName}`);
+  const body = encodeURIComponent(
+    `${who} invited you to share a kanban board called "${hhName}".\n\n` +
+    `Tap to join (you'll sign in with Google):\n${link}\n`
+  );
+  const sms = encodeURIComponent(`${who} invited you to ${hhName}: ${link}`);
+
   const row = document.createElement('div');
   row.className = 'hh-link-row';
   row.innerHTML = `<input value="${esc(link)}" readonly><button type="button">COPY</button>`;
+
+  const actions = document.createElement('div');
+  actions.className = 'hh-link-actions';
+  actions.innerHTML = `
+    <a href="mailto:?subject=${subject}&body=${body}"><button type="button">📧 EMAIL</button></a>
+    <a href="sms:?&body=${sms}"><button type="button">💬 TEXT</button></a>
+    ${navigator.share ? '<button type="button" id="webShareBtn">↗ SHARE</button>' : ''}
+  `;
   wrap.appendChild(row);
+  wrap.appendChild(actions);
+
   const input = row.querySelector('input');
-  const btn = row.querySelector('button');
+  const copyBtn = row.querySelector('button');
   input.select();
-  btn.addEventListener('click', async () => {
+  copyBtn.addEventListener('click', async () => {
     try{
       await navigator.clipboard.writeText(link);
-      btn.textContent = 'COPIED';
-      setTimeout(() => row.remove(), 1500);
+      copyBtn.textContent = 'COPIED';
     }catch(_){
       input.focus(); input.select();
-      btn.textContent = 'SELECT & COPY';
+      copyBtn.textContent = 'SELECT & COPY';
     }
   });
+  const webShareBtn = actions.querySelector('#webShareBtn');
+  if(webShareBtn){
+    webShareBtn.addEventListener('click', async () => {
+      try{
+        await navigator.share({
+          title: `Join ${hhName} on Kanban`,
+          text:  `${who} invited you to share a kanban board called "${hhName}".`,
+          url:   link,
+        });
+      }catch(_){}
+    });
+  }
 }
 
 // If the page loaded with ?invite=TOKEN, fetch the invite and show a sheet
@@ -1434,6 +1531,7 @@ async function maybeHandleInvite(){
         state.tasks = await loadTasks();
         renderBoard();
         renderHouseholdSection();
+        renderHeaderHousehold();
         closeOverlay('inviteSheet');
         toast('Joined household');
       }catch(err){ toast(err.message, true); }
@@ -1961,12 +2059,16 @@ async function runSync(){
     const out = await apiFetch('/api/sync', {method:'POST'});
     const t = out.tasks || {}, c = out.calendar || {}, g = out.gmail || {};
     const errs = [];
-    if(t.error) errs.push('Tasks: ' + t.error);
-    if(c.error) errs.push('Cal: '   + c.error);
-    if(g.error) errs.push('Gmail: ' + g.error);
+    if(t.error)  errs.push('Tasks: ' + t.error);
+    if(c.error)  errs.push('Cal: '   + c.error);
+    if(g.error)  errs.push('Gmail: ' + g.error);
+    // Per-item failures (e.g. Google rejecting individual updates) come
+    // back as a count + sample, not a top-level error.
+    if(t.failed) errs.push(`${t.failed} task${t.failed===1?'':'s'} failed`);
+    if(c.failed) errs.push(`${c.failed} event${c.failed===1?'':'s'} failed`);
     if(errs.length){
       console.error('sync errors', out);
-      toast(errs.join(' | '), true);
+      toast(errs.join(' · '), true);
     }else{
       const parts = [];
       if(t.pushed || t.updated) parts.push(`Tasks +${t.pushed||0}/~${t.updated||0}`);
@@ -2044,6 +2146,7 @@ async function init(){
   await refreshMembers();
   refreshConnUI();
   renderHouseholdSection();
+  renderHeaderHousehold();
   state.tasks = await loadTasks();
   renderBoard();
   refreshShopCount();

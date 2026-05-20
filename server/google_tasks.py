@@ -33,7 +33,8 @@ def sync(user_id, household_id):
 
     tasklist_id = _ensure_list(svc)
     s = session()
-    pushed = updated = completed = 0
+    pushed = updated = completed = failed = 0
+    errors = []
     try:
         tasks = s.query(Task).filter_by(household_id=household_id).all()
         for t in tasks:
@@ -50,6 +51,9 @@ def sync(user_id, household_id):
             sync_row = _get_sync(s, t.id, user_id)
             try:
                 if sync_row.google_task_id:
+                    # Google Tasks update() requires id in the body to match
+                    # the URL — otherwise returns 400 'Missing task ID'.
+                    body["id"] = sync_row.google_task_id
                     svc.tasks().update(
                         tasklist=tasklist_id, task=sync_row.google_task_id, body=body
                     ).execute()
@@ -66,12 +70,16 @@ def sync(user_id, household_id):
                 if e.resp.status == 404 and sync_row.google_task_id:
                     sync_row.google_task_id = None
                 else:
+                    failed += 1
+                    errors.append(f"{t.title}: HTTP {e.resp.status}")
                     print(f"[tasks] error on '{t.title}': {e}")
         s.commit()
     finally:
         s.close()
 
-    return {"ok": True, "pushed": pushed, "updated": updated, "completed": completed}
+    return {"ok": failed == 0, "pushed": pushed, "updated": updated,
+            "completed": completed, "failed": failed,
+            "errors": errors[:5]}
 
 
 def remove_remote(task, user_id):

@@ -64,6 +64,7 @@ def sync(user_id, household_id):
                 }
                 try:
                     if sync_row.google_event_id:
+                        body["id"] = sync_row.google_event_id
                         svc.events().update(
                             calendarId=cal_id, eventId=sync_row.google_event_id, body=body
                         ).execute()
