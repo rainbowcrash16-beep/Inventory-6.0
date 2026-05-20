@@ -101,15 +101,15 @@ def _suggested_title(subject):
     return s[:120] if s else "(no subject)"
 
 
-def scan():
-    svc = service("gmail", "v1")
+def scan(user_id, household_id):
+    svc = service("gmail", "v1", user_id)
     if not svc:
         return {"ok": False, "error": "not_connected"}
 
     s = session()
-    state = s.get(SyncState, 1)
+    state = s.query(SyncState).filter_by(user_id=user_id).first()
     if not state:
-        state = SyncState(id=1)
+        state = SyncState(user_id=user_id)
         s.add(state)
         s.commit()
 
@@ -128,8 +128,10 @@ def scan():
                     metadataHeaders=["Subject", "From"],
                 ).execute()
                 email_id = msg["id"]
-                # Skip if already converted
-                existing = s.query(Task).filter_by(source_email_id=email_id).first()
+                # Skip if already converted (any task in this user's data)
+                existing = (s.query(Task)
+                            .filter_by(source_email_id=email_id, created_by_user_id=user_id)
+                            .first())
                 if existing:
                     skipped += 1
                     continue
@@ -139,6 +141,8 @@ def scan():
                 snippet = msg.get("snippet", "")
                 t = Task(
                     id=_gen_id(),
+                    household_id=household_id,
+                    created_by_user_id=user_id,
                     title=_suggested_title(subject),
                     description=f"From: {sender}\n\n{snippet}",
                     priority="medium",
@@ -155,10 +159,13 @@ def scan():
         for ref in resp.get("messages", []):
             email_id = ref["id"]
             # Skip if labeled (handled above) — quick check by looking up labels
-            existing_sug = s.query(EmailSuggestion).filter_by(email_id=email_id).first()
+            existing_sug = (s.query(EmailSuggestion)
+                            .filter_by(email_id=email_id, user_id=user_id).first())
             if existing_sug:
                 continue
-            existing_task = s.query(Task).filter_by(source_email_id=email_id).first()
+            existing_task = (s.query(Task)
+                             .filter_by(source_email_id=email_id, created_by_user_id=user_id)
+                             .first())
             if existing_task:
                 continue
 
@@ -175,6 +182,7 @@ def scan():
             if not _looks_like_task(subject, sender, snippet):
                 continue
             sug = EmailSuggestion(
+                user_id=user_id,
                 email_id=email_id,
                 subject=subject[:200],
                 sender=sender[:200],
@@ -195,14 +203,18 @@ def scan():
     return {"ok": True, "autoCreated": auto_created, "suggested": suggested, "skipped": skipped}
 
 
-def accept_suggestion(sug_id):
+def accept_suggestion(sug_id, user_id, household_id):
     s = session()
     try:
         sug = s.get(EmailSuggestion, sug_id)
         if not sug or sug.accepted_task_id or sug.dismissed_at:
             return None
+        if sug.user_id is not None and sug.user_id != user_id:
+            return None
         t = Task(
             id=_gen_id(),
+            household_id=household_id,
+            created_by_user_id=user_id,
             title=sug.suggested_title or "(no subject)",
             description=f"From: {sug.sender}\n\n{sug.snippet}",
             priority="medium",
@@ -217,11 +229,15 @@ def accept_suggestion(sug_id):
         s.close()
 
 
-def dismiss_suggestion(sug_id):
+def dismiss_suggestion(sug_id, user_id):
     s = session()
     try:
         sug = s.get(EmailSuggestion, sug_id)
-        if sug and not sug.dismissed_at:
+        if not sug:
+            return False
+        if sug.user_id is not None and sug.user_id != user_id:
+            return False
+        if not sug.dismissed_at:
             sug.dismissed_at = datetime.utcnow()
             s.commit()
         return True
@@ -229,11 +245,12 @@ def dismiss_suggestion(sug_id):
         s.close()
 
 
-def list_suggestions():
+def list_suggestions(user_id):
     s = session()
     try:
         rows = (
             s.query(EmailSuggestion)
+            .filter(EmailSuggestion.user_id == user_id)
             .filter(EmailSuggestion.dismissed_at.is_(None))
             .filter(EmailSuggestion.accepted_task_id.is_(None))
             .order_by(EmailSuggestion.created_at.desc())

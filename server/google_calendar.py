@@ -1,15 +1,21 @@
-"""Push Kanban tasks with due dates into Google Calendar as 30-minute events."""
+"""Push household tasks with due dates into *this user's* Google Calendar."""
 from datetime import timedelta
 from googleapiclient.errors import HttpError
 
-from db import session, Task
+from db import session, Task, TaskSync
 from google_auth import service
 
 CAL_SUMMARY = "Kanban Tasks"
 
+_PRIORITY_COLOR = {
+    "urgent": "11",  # red
+    "high": "5",
+    "medium": "9",
+    "low": "8",
+}
+
 
 def _ensure_calendar(svc):
-    """Return calendar id for our 'Kanban Tasks' calendar, creating it if missing."""
     page_token = None
     while True:
         resp = svc.calendarList().list(pageToken=page_token).execute()
@@ -23,16 +29,18 @@ def _ensure_calendar(svc):
     return created["id"]
 
 
-_PRIORITY_COLOR = {
-    "urgent": "11",  # red ("Tomato")
-    "high": "5",     # yellow ("Banana")
-    "medium": "9",   # blue ("Blueberry")
-    "low": "8",      # gray ("Graphite")
-}
+def _get_sync(s, task_id, user_id):
+    row = (s.query(TaskSync)
+           .filter_by(task_id=task_id, user_id=user_id)
+           .first())
+    if not row:
+        row = TaskSync(task_id=task_id, user_id=user_id)
+        s.add(row); s.flush()
+    return row
 
 
-def sync():
-    svc = service("calendar", "v3")
+def sync(user_id, household_id):
+    svc = service("calendar", "v3", user_id)
     if not svc:
         return {"ok": False, "error": "not_connected"}
 
@@ -40,11 +48,10 @@ def sync():
     s = session()
     created = updated = removed = 0
     try:
-        tasks = s.query(Task).all()
+        tasks = s.query(Task).filter_by(household_id=household_id).all()
         for t in tasks:
-            should_have_event = (
-                t.due_at is not None and t.status != "done"
-            )
+            should_have_event = t.due_at is not None and t.status != "done"
+            sync_row = _get_sync(s, t.id, user_id)
             if should_have_event:
                 start = t.due_at
                 end = start + timedelta(minutes=30)
@@ -56,47 +63,53 @@ def sync():
                     "colorId": _PRIORITY_COLOR.get(t.priority, "9"),
                 }
                 try:
-                    if t.google_event_id:
+                    if sync_row.google_event_id:
                         svc.events().update(
-                            calendarId=cal_id, eventId=t.google_event_id, body=body
+                            calendarId=cal_id, eventId=sync_row.google_event_id, body=body
                         ).execute()
                         updated += 1
                     else:
                         ev = svc.events().insert(calendarId=cal_id, body=body).execute()
-                        t.google_event_id = ev["id"]
+                        sync_row.google_event_id = ev["id"]
                         created += 1
                 except HttpError as e:
-                    if e.resp.status == 404 and t.google_event_id:
-                        t.google_event_id = None
+                    if e.resp.status == 404 and sync_row.google_event_id:
+                        sync_row.google_event_id = None
                     else:
                         print(f"[calendar] error on '{t.title}': {e}")
             else:
-                # task should NOT have an event — remove if one exists
-                if t.google_event_id:
+                if sync_row.google_event_id:
                     try:
                         svc.events().delete(
-                            calendarId=cal_id, eventId=t.google_event_id
+                            calendarId=cal_id, eventId=sync_row.google_event_id
                         ).execute()
                         removed += 1
                     except HttpError as e:
                         if e.resp.status != 404:
                             print(f"[calendar] delete failed: {e}")
-                    t.google_event_id = None
+                    sync_row.google_event_id = None
         s.commit()
     finally:
         s.close()
     return {"ok": True, "created": created, "updated": updated, "removed": removed}
 
 
-def remove_remote(task):
-    if not task.google_event_id:
-        return
-    svc = service("calendar", "v3")
-    if not svc:
-        return
+def remove_remote(task, user_id):
+    s = session()
     try:
-        cal_id = _ensure_calendar(svc)
-        svc.events().delete(calendarId=cal_id, eventId=task.google_event_id).execute()
-    except HttpError as e:
-        if e.resp.status != 404:
-            print(f"[calendar] delete failed: {e}")
+        row = (s.query(TaskSync)
+               .filter_by(task_id=task.id, user_id=user_id)
+               .first())
+        if not row or not row.google_event_id:
+            return
+        svc = service("calendar", "v3", user_id)
+        if not svc:
+            return
+        try:
+            cal_id = _ensure_calendar(svc)
+            svc.events().delete(calendarId=cal_id, eventId=row.google_event_id).execute()
+        except HttpError as e:
+            if e.resp.status != 404:
+                print(f"[calendar] delete failed: {e}")
+    finally:
+        s.close()

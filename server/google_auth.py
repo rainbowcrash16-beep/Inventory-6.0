@@ -70,19 +70,65 @@ def exchange_code(code, state, code_verifier=None):
     flow.fetch_token(code=code)
     creds = flow.credentials
     userinfo = build("oauth2", "v2", credentials=creds).userinfo().get().execute()
-    save_credentials(creds, userinfo)
-    return userinfo
+    user = _ensure_user_and_household(userinfo)
+    save_credentials(creds, user)
+    return user
 
 
-def save_credentials(creds, userinfo):
+def _ensure_user_and_household(userinfo):
+    """Find or create a User from the Google userinfo response, and make
+    sure they have a household (joining 'My Tasks' if one already exists
+    and isn't theirs, otherwise creating one)."""
+    from db import session, User, Household, Membership
     s = session()
     try:
-        row = s.get(Credentials, 1)
+        gid = userinfo.get("id", "")
+        if not gid:
+            raise RuntimeError("Google userinfo missing id")
+        user = s.query(User).filter_by(google_id=gid).first()
+        if not user:
+            user = User(
+                google_id=gid,
+                email=userinfo.get("email", ""),
+                name=userinfo.get("name") or userinfo.get("email", ""),
+                picture_url=userinfo.get("picture"),
+            )
+            s.add(user); s.flush()
+        else:
+            # Keep email / name / picture in sync with Google
+            user.email = userinfo.get("email", user.email)
+            user.name = userinfo.get("name") or user.name
+            user.picture_url = userinfo.get("picture") or user.picture_url
+
+        # Make sure the user has at least one household membership.
+        has_membership = s.query(Membership).filter_by(user_id=user.id).first()
+        if not has_membership:
+            # Adopt the legacy "My Tasks" household if it has no owner yet.
+            orphan = s.query(Household).filter_by(created_by_user_id=None).first()
+            if orphan:
+                orphan.created_by_user_id = user.id
+                s.add(Membership(household_id=orphan.id, user_id=user.id, role="owner"))
+            else:
+                h = Household(name="My Tasks", created_by_user_id=user.id)
+                s.add(h); s.flush()
+                s.add(Membership(household_id=h.id, user_id=user.id, role="owner"))
+        s.commit()
+        return user.to_dict() | {"id": user.id}
+    finally:
+        s.close()
+
+
+def save_credentials(creds, user):
+    """Persist refreshed OAuth credentials for a specific user."""
+    from db import session, Credentials
+    s = session()
+    try:
+        row = s.query(Credentials).filter_by(user_id=user["id"]).first()
         if not row:
-            row = Credentials(id=1)
+            row = Credentials(user_id=user["id"])
             s.add(row)
-        row.google_id = userinfo.get("id", "")
-        row.email = userinfo.get("email", "")
+        row.google_id = user.get("googleId") or user.get("google_id") or ""
+        row.email = user.get("email", "")
         if creds.refresh_token:
             row.refresh_token = creds.refresh_token
         row.access_token = creds.token
@@ -93,11 +139,15 @@ def save_credentials(creds, userinfo):
         s.close()
 
 
-def load_credentials():
-    """Return a refreshed google.oauth2.credentials.Credentials, or None."""
+def load_credentials(user_id):
+    """Return a refreshed google.oauth2.credentials.Credentials for the
+    given user, or None if they have no stored token."""
+    from db import session, Credentials
+    if user_id is None:
+        return None
     s = session()
     try:
-        row = s.get(Credentials, 1)
+        row = s.query(Credentials).filter_by(user_id=user_id).first()
         if not row:
             return None
         creds = GoogleCreds(
@@ -116,28 +166,32 @@ def load_credentials():
                 row.token_expiry = creds.expiry
                 s.commit()
             except Exception as e:
-                print(f"[auth] refresh failed: {e}")
+                print(f"[auth] refresh failed for user_id={user_id}: {e}")
                 return None
         return creds
     finally:
         s.close()
 
 
-def current_user():
+def current_user(user_id):
+    from db import session, User
+    if user_id is None:
+        return None
     s = session()
     try:
-        row = s.get(Credentials, 1)
-        if not row:
-            return None
-        return {"email": row.email, "googleId": row.google_id}
+        u = s.get(User, user_id)
+        return u.to_dict() if u else None
     finally:
         s.close()
 
 
-def disconnect():
+def disconnect(user_id):
+    from db import session, Credentials
+    if user_id is None:
+        return
     s = session()
     try:
-        row = s.get(Credentials, 1)
+        row = s.query(Credentials).filter_by(user_id=user_id).first()
         if row:
             s.delete(row)
             s.commit()
@@ -145,8 +199,8 @@ def disconnect():
         s.close()
 
 
-def service(name, version):
-    creds = load_credentials()
+def service(name, version, user_id):
+    creds = load_credentials(user_id)
     if not creds:
         return None
     return build(name, version, credentials=creds, cache_discovery=False)

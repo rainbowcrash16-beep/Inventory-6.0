@@ -58,6 +58,26 @@ body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg
 .sb-item-disabled{opacity:.45;cursor:not-allowed}
 .sb-item-disabled:hover{border-color:var(--border);background:var(--panel)}
 
+/* Household sidebar block */
+.hh-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.hh-name{font-family:var(--font-head);font-size:13px;font-weight:800;letter-spacing:2px;color:var(--green);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hh-name .hh-role{font-size:9px;color:var(--muted);font-weight:700;letter-spacing:1px}
+.hh-members{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.hh-chip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:3px 8px 3px 4px;font-size:10px;color:var(--text);letter-spacing:.3px}
+.hh-chip .hh-avatar{width:18px;height:18px;border-radius:50%;background:var(--green);color:var(--dark);font-weight:800;font-size:9px;display:inline-flex;align-items:center;justify-content:center;letter-spacing:0;text-transform:uppercase}
+.hh-chip img.hh-avatar{object-fit:cover}
+.hh-chip.hh-owner{border-color:color-mix(in srgb,var(--green) 55%,var(--border))}
+.hh-actions{display:flex;flex-direction:column;gap:6px}
+.hh-actions .sb-item{margin-bottom:0;padding:8px 10px}
+.hh-link-row{display:flex;gap:6px;margin-top:8px}
+.hh-link-row input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:var(--font-mono);font-size:10px;letter-spacing:0;outline:none}
+.hh-link-row button{background:var(--green);color:var(--dark);border:none;border-radius:8px;padding:7px 10px;font-size:10px;font-weight:800;letter-spacing:.5px;cursor:pointer;font-family:var(--font-mono)}
+
+/* Card attribution chip — only shown when household has multiple members */
+.kcard-by{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--muted);letter-spacing:.5px;margin-top:6px}
+.kcard-by .by-avatar{width:14px;height:14px;border-radius:50%;background:var(--purple);color:var(--dark);font-weight:800;font-size:8px;display:inline-flex;align-items:center;justify-content:center;text-transform:uppercase}
+.kcard-by img.by-avatar{object-fit:cover}
+
 /* Report table (used by both task export preview and materials report) */
 .rpt-table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
 .rpt-table th,.rpt-table td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
@@ -467,11 +487,22 @@ body.sb-open .hbg-btn span:nth-child(3){transform:translateY(-6px) rotate(-45deg
     </button>
 
     <div class="sb-section">HOUSEHOLD</div>
-    <button class="sb-item sb-item-disabled" disabled>
-      <span class="sb-ico">👥</span><div><div class="sb-title">Sharing &amp; members</div>
-      <div class="sb-sub">Coming in the next update</div></div>
-    </button>
+    <div id="hhSection"></div>
   </aside>
+</div>
+
+<div class="overlay" id="inviteSheet">
+  <div class="sheet">
+    <div class="sheet-hdr">
+      <h2>JOIN A HOUSEHOLD</h2>
+      <button class="close-btn" data-close="inviteSheet" aria-label="Close">✕</button>
+    </div>
+    <div id="inviteBody"></div>
+    <div class="action-row">
+      <button class="btn btn-ghost" data-close="inviteSheet">NOT NOW</button>
+      <button class="btn btn-green" id="inviteAcceptBtn">JOIN</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="importSheet">
@@ -564,9 +595,14 @@ const PRI_BADGE = {urgent:'badge-red', high:'badge-amber', medium:'badge-blue', 
 
 const state = {
   mode: 'local',          // 'api' if connected to backend, else 'local' (localStorage)
-  apiBase: '',            // populated at init when api mode is available
-  connected: false,       // Google account connected
-  userEmail: null,
+  apiBase: '',
+  signedIn: false,        // backend session present (regardless of Google)
+  connected: false,       // Google tokens stored (i.e. can sync)
+  user: null,             // {id, email, name, pictureUrl}
+  households: [],         // [{id, name, role, memberCount}]
+  activeHouseholdId: null,
+  members: [],            // cached member list of the active household
+  userEmail: null,        // legacy alias for connection UI
   tasks: [],
   suggestions: [],
   editingId: null,
@@ -576,6 +612,7 @@ const state = {
   formDueAt: '',          // datetime-local string
   formSubtasks: [],       // [{id, text, done}] while the edit sheet is open
   formMaterials: [],      // same shape; "stuff you need to do the task"
+  lastTasksFetchAt: 0,    // for polling refresh
 };
 
 function genSubId(){
@@ -652,10 +689,15 @@ async function detectMode(){
     if(!res.ok) throw new Error('api unavailable');
     const data = await res.json();
     state.mode = 'api';
+    state.signedIn = !!data.signedIn;
     state.connected = !!data.connected;
-    state.userEmail = data.user && data.user.email || null;
+    state.user = data.user || null;
+    state.households = data.households || [];
+    state.activeHouseholdId = data.activeHouseholdId || null;
+    state.userEmail = state.user && state.user.email || null;
   }catch(_){
     state.mode = 'local';
+    state.signedIn = false;
     state.connected = false;
   }
 }
@@ -786,6 +828,14 @@ function cardHTML(t){
     const cls = mProg.done === mProg.total ? 'mp-done' : (mProg.done > 0 ? 'mp-some' : '');
     matBadge = `<span class="mat-prog ${cls}">📦 ${mProg.done}/${mProg.total}</span>`;
   }
+  // "added by" attribution — only when there's more than one member
+  let byChip = '';
+  if(state.members && state.members.length > 1 && t.createdByUserId){
+    const m = memberById(t.createdByUserId);
+    if(m){
+      byChip = `<span class="kcard-by" title="${esc(m.email)}">${avatarHTML(m, 'by-avatar')}${esc(m.name || m.email)}</span>`;
+    }
+  }
   return `<div class="kcard" data-id="${t.id}">
     <div class="kcard-stripe p-${t.priority}"></div>
     <div class="kcard-top">
@@ -796,6 +846,7 @@ function cardHTML(t){
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       ${bucket ? `<span class="due-chip due-${bucket}">${dueIcon} ${esc(dueLabel)}</span>` : ''}
       ${subBadge}${matBadge}
+      ${byChip}
     </div>
     ${progBar}
   </div>`;
@@ -1176,6 +1227,243 @@ async function runImport(){
   refreshShopCount();
   closeOverlay('importSheet');
   toast(`Imported ${addedMaterials} item(s) into ${createdTasks} new + ${updatedTasks} existing task(s)`);
+}
+
+// ── Household / members / invites ──────────────────────────────────────────
+function initials(name){
+  return String(name || '?').trim().split(/\s+/).map(p => p[0]).join('').slice(0,2);
+}
+function memberById(uid){
+  return state.members.find(m => m.userId === uid);
+}
+function avatarHTML(m, cls){
+  if(m && m.pictureUrl) return `<img class="${cls}" src="${esc(m.pictureUrl)}" alt="">`;
+  return `<span class="${cls}">${esc(initials(m && (m.name || m.email)))}</span>`;
+}
+
+async function refreshMembers(){
+  if(state.mode !== 'api' || !state.activeHouseholdId){
+    state.members = [];
+    return;
+  }
+  try{
+    state.members = await apiFetch('/api/households/' + state.activeHouseholdId + '/members');
+  }catch(err){
+    state.members = [];
+  }
+}
+
+function renderHouseholdSection(){
+  const wrap = document.getElementById('hhSection');
+  if(!wrap) return;
+  if(state.mode !== 'api'){
+    wrap.innerHTML = `<div class="kcol-empty" style="border-style:dashed">Local-only mode. Sharing requires the cloud backend.</div>`;
+    return;
+  }
+  if(!state.signedIn){
+    wrap.innerHTML = `
+      <button class="sb-item" id="hhSignInBtn">
+        <span class="sb-ico">👤</span>
+        <div><div class="sb-title">Sign in with Google</div>
+        <div class="sb-sub">Required to share with others</div></div>
+      </button>`;
+    document.getElementById('hhSignInBtn').addEventListener('click', () => { location.href = '/api/auth/login'; });
+    return;
+  }
+  const active = state.households.find(h => h.id === state.activeHouseholdId);
+  const owner = active && active.role === 'owner';
+  const membersHTML = (state.members || []).map(m => `
+    <span class="hh-chip ${m.role === 'owner' ? 'hh-owner' : ''}" title="${esc(m.email)}">
+      ${avatarHTML(m, 'hh-avatar')}<span>${esc(m.name || m.email)}</span>
+    </span>
+  `).join('') || '<span class="kcol-empty" style="padding:6px 8px;font-size:10px">Just you for now.</span>';
+
+  wrap.innerHTML = `
+    <div class="hh-card">
+      <div class="hh-name">
+        <span>${esc(active ? active.name : '—')}</span>
+        <span class="hh-role">${active ? active.role.toUpperCase() : ''}</span>
+      </div>
+      <div class="hh-members">${membersHTML}</div>
+      <div class="hh-actions">
+        <button class="sb-item" data-hh-action="invite">
+          <span class="sb-ico">📨</span><div><div class="sb-title">Invite someone</div>
+          <div class="sb-sub">Generate a shareable link</div></div>
+        </button>
+        ${state.households.length > 1 ? `
+          <button class="sb-item" data-hh-action="switch">
+            <span class="sb-ico">🔀</span><div><div class="sb-title">Switch household</div>
+            <div class="sb-sub">${state.households.length} available</div></div>
+          </button>
+        ` : ''}
+        <button class="sb-item" data-hh-action="new">
+          <span class="sb-ico">➕</span><div><div class="sb-title">New household</div>
+          <div class="sb-sub">Create another shared board</div></div>
+        </button>
+        ${active && state.households.length > 1 ? `
+          <button class="sb-item" data-hh-action="leave">
+            <span class="sb-ico">🚪</span><div><div class="sb-title">Leave this household</div>
+            <div class="sb-sub">Removes you from the member list</div></div>
+          </button>
+        ` : ''}
+      </div>
+    </div>`;
+  wrap.querySelectorAll('[data-hh-action]').forEach(b => {
+    b.addEventListener('click', () => handleHHAction(b.dataset.hhAction));
+  });
+}
+
+async function handleHHAction(action){
+  if(action === 'invite'){
+    try{
+      const {link} = await apiFetch('/api/households/' + state.activeHouseholdId + '/invites', {method:'POST'});
+      promptInviteLink(link);
+    }catch(err){ toast('Could not create invite: ' + err.message, true); }
+    return;
+  }
+  if(action === 'new'){
+    const name = prompt('Name for the new household:', 'New household');
+    if(!name) return;
+    try{
+      const h = await apiFetch('/api/households', {method:'POST', body: JSON.stringify({name})});
+      await reloadMe();
+      await switchHousehold(h.id);
+    }catch(err){ toast('Create failed: ' + err.message, true); }
+    return;
+  }
+  if(action === 'switch'){
+    const ids = state.households.map(h => h.id);
+    const labels = state.households.map(h => h.name + (h.id === state.activeHouseholdId ? '  (active)' : ''));
+    const pick = prompt('Switch to which household?\n' + labels.map((l, i) => (i+1)+'. '+l).join('\n'));
+    const n = parseInt(pick, 10);
+    if(!n || n < 1 || n > ids.length) return;
+    await switchHousehold(ids[n-1]);
+    return;
+  }
+  if(action === 'leave'){
+    if(!confirm('Leave this household? You can be re-invited later.')) return;
+    try{
+      await apiFetch('/api/households/' + state.activeHouseholdId + '/members/' + state.user.id, {method:'DELETE'});
+      await reloadMe();
+      state.tasks = await loadTasks();
+      renderBoard();
+      renderHouseholdSection();
+      toast('Left household');
+    }catch(err){ toast(err.message, true); }
+  }
+}
+
+async function switchHousehold(hid){
+  try{
+    await apiFetch('/api/households/' + hid + '/activate', {method:'POST'});
+    await reloadMe();
+    state.tasks = await loadTasks();
+    renderBoard();
+    renderHouseholdSection();
+    toast('Switched household');
+  }catch(err){ toast('Switch failed: ' + err.message, true); }
+}
+
+async function reloadMe(){
+  const data = await apiFetch('/api/me');
+  state.signedIn = !!data.signedIn;
+  state.connected = !!data.connected;
+  state.user = data.user || null;
+  state.households = data.households || [];
+  state.activeHouseholdId = data.activeHouseholdId || null;
+  state.userEmail = state.user && state.user.email || null;
+  await refreshMembers();
+  refreshConnUI();
+}
+
+function promptInviteLink(link){
+  // Show a temporary panel with the link and a copy button.
+  const wrap = document.getElementById('hhSection');
+  const row = document.createElement('div');
+  row.className = 'hh-link-row';
+  row.innerHTML = `<input value="${esc(link)}" readonly><button type="button">COPY</button>`;
+  wrap.appendChild(row);
+  const input = row.querySelector('input');
+  const btn = row.querySelector('button');
+  input.select();
+  btn.addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(link);
+      btn.textContent = 'COPIED';
+      setTimeout(() => row.remove(), 1500);
+    }catch(_){
+      input.focus(); input.select();
+      btn.textContent = 'SELECT & COPY';
+    }
+  });
+}
+
+// If the page loaded with ?invite=TOKEN, fetch the invite and show a sheet
+// asking the user whether to join. If they're not signed in yet, the JOIN
+// button redirects through the OAuth flow carrying the invite.
+async function maybeHandleInvite(){
+  const inv = new URLSearchParams(location.search).get('invite');
+  if(!inv) return;
+  try{
+    const data = await fetch('/api/invites/' + encodeURIComponent(inv), {credentials:'same-origin'})
+                  .then(r => r.ok ? r.json() : Promise.reject(new Error('Invite invalid')));
+    document.getElementById('inviteBody').innerHTML = `
+      <div class="detail-desc">
+        <b>${esc(data.invitedBy || 'Someone')}</b> invited you to join the household
+        <b style="color:var(--green)">${esc(data.householdName || '(unnamed)')}</b>
+        as a <b>${esc(data.role)}</b>.
+      </div>
+      <div class="sec-label">WHAT THIS MEANS</div>
+      <div class="detail-desc" style="font-size:12px;line-height:1.55">
+        You'll share the same kanban board, checklists, materials, and shopping
+        list with everyone in this household. Your own Google account stays
+        private — your Gmail suggestions and personal Google Tasks aren't
+        shared.
+      </div>
+    `;
+    document.getElementById('inviteAcceptBtn').onclick = async () => {
+      if(!state.signedIn){
+        // Carry the invite through the OAuth round-trip
+        location.href = '/api/auth/login?invite=' + encodeURIComponent(inv);
+        return;
+      }
+      try{
+        await apiFetch('/api/invites/' + encodeURIComponent(inv) + '/accept', {method:'POST'});
+        history.replaceState({}, '', location.pathname);
+        await reloadMe();
+        state.tasks = await loadTasks();
+        renderBoard();
+        renderHouseholdSection();
+        closeOverlay('inviteSheet');
+        toast('Joined household');
+      }catch(err){ toast(err.message, true); }
+    };
+    openOverlay('inviteSheet');
+  }catch(err){
+    toast('Invalid or used invite link', true);
+    history.replaceState({}, '', location.pathname);
+  }
+}
+
+// Light polling so other members' changes show up while a tab is focused.
+let pollTimer = null;
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    if(state.mode !== 'api' || !state.signedIn || !state.activeHouseholdId) return;
+    if(document.hidden) return;
+    if(document.querySelector('.overlay.open')) return;     // don't refresh mid-edit
+    try{
+      const latest = await apiFetch('/api/tasks');
+      if(JSON.stringify(latest) !== JSON.stringify(state.tasks)){
+        state.tasks = latest;
+        renderBoard();
+      }
+    }catch(_){}
+  }, 30_000);
+}
+function stopPolling(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -1753,13 +2041,21 @@ async function handleSuggestionAction(action, sugId){
 // ── Init / event wiring ──────────────────────────────────────────────────────
 async function init(){
   await detectMode();
+  await refreshMembers();
   refreshConnUI();
+  renderHouseholdSection();
   state.tasks = await loadTasks();
   renderBoard();
   refreshShopCount();
   if(state.mode === 'api' && state.connected){
     refreshSuggestionCount();
   }
+  if(state.mode === 'api' && state.signedIn){
+    startPolling();
+  }
+
+  // Invite-link landing page handling (sheets up after auth flow if needed)
+  maybeHandleInvite();
 
   // If we just completed the OAuth callback, show a toast
   if(new URLSearchParams(location.search).get('connected') === '1'){

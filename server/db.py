@@ -1,6 +1,7 @@
 """Database models and session helpers."""
 import os
 import json
+import secrets
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, DateTime, ForeignKey, inspect, text,
@@ -40,10 +41,63 @@ SessionLocal = scoped_session(sessionmaker(bind=engine, autoflush=False, autocom
 Base = declarative_base()
 
 
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    google_id = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, nullable=False)
+    name = Column(String, nullable=True)
+    picture_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name or self.email,
+            "pictureUrl": self.picture_url,
+        }
+
+
+class Household(Base):
+    __tablename__ = "households"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, default="My Tasks")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    household_id = Column(Integer, ForeignKey("households.id"), nullable=False, index=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String, nullable=False, default="member")   # 'owner' | 'member'
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Invite(Base):
+    __tablename__ = "invites"
+    token = Column(String, primary_key=True)
+    household_id = Column(Integer, ForeignKey("households.id"), nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, nullable=False, default="member")
+    expires_at = Column(DateTime, nullable=True)
+    accepted_at = Column(DateTime, nullable=True)
+    accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+def gen_invite_token():
+    return secrets.token_urlsafe(16)
+
+
 class Credentials(Base):
-    """Single-user credential store. Always id=1."""
+    """Google OAuth credentials, one row per user."""
     __tablename__ = "credentials"
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=True, index=True)
     google_id = Column(String, nullable=False)
     email = Column(String, nullable=False)
     refresh_token = Column(Text, nullable=True)
@@ -57,6 +111,8 @@ class Credentials(Base):
 class Task(Base):
     __tablename__ = "tasks"
     id = Column(String, primary_key=True)
+    household_id = Column(Integer, ForeignKey("households.id"), nullable=True, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String, nullable=False)
     description = Column(Text, default="")
     priority = Column(String, default="medium")
@@ -131,6 +187,8 @@ class Task(Base):
     def to_dict(self):
         return {
             "id": self.id,
+            "householdId": self.household_id,
+            "createdByUserId": self.created_by_user_id,
             "title": self.title,
             "description": self.description or "",
             "priority": self.priority,
@@ -155,7 +213,8 @@ def _gen_sub_id():
 class EmailSuggestion(Base):
     __tablename__ = "email_suggestions"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    email_id = Column(String, unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email_id = Column(String, nullable=False)
     subject = Column(String, default="")
     sender = Column(String, default="")
     snippet = Column(Text, default="")
@@ -176,10 +235,23 @@ class EmailSuggestion(Base):
         }
 
 
+class TaskSync(Base):
+    """Per-user Google Tasks / Calendar IDs for a task. Each member of a
+    household syncs the shared board to their own Google account, so the
+    Google IDs must be tracked per user, not on the task itself."""
+    __tablename__ = "task_sync"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    google_task_id = Column(String, nullable=True)
+    google_event_id = Column(String, nullable=True)
+
+
 class SyncState(Base):
-    """Tracks the last Gmail scan to avoid re-processing old mail."""
+    """Per-user state — last Gmail scan, last sync timestamp."""
     __tablename__ = "sync_state"
-    id = Column(Integer, primary_key=True)  # always 1
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=True, index=True)
     last_gmail_scan_at = Column(DateTime, nullable=True)
     last_full_sync_at = Column(DateTime, nullable=True)
 
@@ -190,30 +262,119 @@ def init_db():
 
 
 def _migrate():
-    """Add columns to existing tables when the SQLAlchemy model grows.
-
-    create_all() only creates missing tables, not missing columns, so when we
-    extend a model we need a tiny ALTER TABLE pass. Each migration step is
-    idempotent (checks the column list first) and works on both SQLite and
-    Postgres."""
+    """Add columns to existing tables, then promote legacy single-user data
+    into the multi-user shape (users / households / memberships). Each step
+    is idempotent — safe to run repeatedly on startup."""
     insp = inspect(engine)
     if "tasks" not in insp.get_table_names():
         return
-    cols = {c["name"] for c in insp.get_columns("tasks")}
-    statements = []
-    if "subtasks" not in cols:
-        statements.append("ALTER TABLE tasks ADD COLUMN subtasks TEXT")
-    if "materials" not in cols:
-        statements.append("ALTER TABLE tasks ADD COLUMN materials TEXT")
-    if not statements:
-        return
+
+    # --- column additions on existing tables ---
+    table_alters = {
+        "tasks": {
+            "subtasks":            "ALTER TABLE tasks ADD COLUMN subtasks TEXT",
+            "materials":           "ALTER TABLE tasks ADD COLUMN materials TEXT",
+            "household_id":        "ALTER TABLE tasks ADD COLUMN household_id INTEGER",
+            "created_by_user_id":  "ALTER TABLE tasks ADD COLUMN created_by_user_id INTEGER",
+        },
+        "credentials": {
+            "user_id":             "ALTER TABLE credentials ADD COLUMN user_id INTEGER",
+        },
+        "email_suggestions": {
+            "user_id":             "ALTER TABLE email_suggestions ADD COLUMN user_id INTEGER",
+        },
+        "sync_state": {
+            "user_id":             "ALTER TABLE sync_state ADD COLUMN user_id INTEGER",
+        },
+    }
     with engine.begin() as conn:
-        for stmt in statements:
+        for table, additions in table_alters.items():
+            if table not in insp.get_table_names():
+                continue
+            cols = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in additions.items():
+                if col in cols:
+                    continue
+                try:
+                    conn.execute(text(ddl))
+                    print(f"[db] migrated: {ddl}")
+                except Exception as e:
+                    print(f"[db] migration step failed ({ddl}): {e}")
+
+    _backfill_single_user_data()
+
+
+def _backfill_single_user_data():
+    """If the database used to be single-user (one credentials row, no
+    households), promote that into a User + Household + Membership and
+    attach all existing tasks. Runs at most once: the second call is a
+    no-op because there will already be a household."""
+    s = SessionLocal()
+    try:
+        # Any household already exists → assume backfill ran before
+        existing_household = s.query(Household).first()
+        if existing_household:
+            return
+
+        # Try to find legacy credentials (id=1 from the single-user era,
+        # or any credentials row without a user_id).
+        legacy = (
+            s.query(Credentials)
+            .filter((Credentials.user_id.is_(None)) | (Credentials.id == 1))
+            .first()
+        )
+
+        user = None
+        if legacy and legacy.google_id:
+            user = User(
+                google_id=legacy.google_id,
+                email=legacy.email or "unknown@unknown",
+                name=legacy.email or "",
+            )
+            s.add(user); s.flush()
+            legacy.user_id = user.id
+
+        # Create a default household. If we found a user, they're the owner.
+        # If not, we still create one so future signups can use it (the
+        # first signer-in becomes its owner via the OAuth callback path).
+        h = Household(name="My Tasks", created_by_user_id=user.id if user else None)
+        s.add(h); s.flush()
+
+        if user:
+            s.add(Membership(household_id=h.id, user_id=user.id, role="owner"))
+
+        # Attach all orphan tasks (household_id IS NULL) to this household.
+        try:
+            s.execute(text(
+                "UPDATE tasks SET household_id = :hid WHERE household_id IS NULL"
+            ), {"hid": h.id})
+            if user:
+                s.execute(text(
+                    "UPDATE tasks SET created_by_user_id = :uid "
+                    "WHERE created_by_user_id IS NULL"
+                ), {"uid": user.id})
+        except Exception as e:
+            print(f"[db] backfill UPDATE tasks failed: {e}")
+
+        # Promote the per-task google_task_id / google_event_id values into
+        # task_sync rows owned by the legacy user. Old columns stay on tasks
+        # for safety but won't be used by the new sync path.
+        if user:
             try:
-                conn.execute(text(stmt))
-                print(f"[db] migrated: {stmt}")
+                s.execute(text("""
+                    INSERT INTO task_sync (task_id, user_id, google_task_id, google_event_id)
+                    SELECT id, :uid, google_task_id, google_event_id
+                    FROM tasks
+                    WHERE (google_task_id IS NOT NULL OR google_event_id IS NOT NULL)
+                      AND id NOT IN (SELECT task_id FROM task_sync WHERE user_id = :uid)
+                """), {"uid": user.id})
             except Exception as e:
-                print(f"[db] migration step failed ({stmt}): {e}")
+                print(f"[db] backfill task_sync failed: {e}")
+
+        s.commit()
+        print(f"[db] backfilled: user_id={user.id if user else None} household_id={h.id}")
+    finally:
+        s.close()
 
 
 def session():
